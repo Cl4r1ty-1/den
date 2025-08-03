@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - den</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #dc3545;
+        }
+        
+        .stat-label {
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .button.secondary {
+            background: #6c757d;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .nav-tab {
+            padding: 1rem 2rem;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #666;
+            transition: all 0.2s;
+        }
+        
+        .nav-tab.active {
+            color: #dc3545;
+            border-bottom-color: #dc3545;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin: 1rem 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #dc3545;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        .table th,
+        .table td {
+            text-align: left;
+            padding: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .status.online {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn-small {
+            padding: 0.25rem 0.75rem;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal h3 {
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">den admin </div>
+        <div>
+            <a href="/user/dashboard" style="color: white; text-decoration: none; margin-right: 1rem;">user dashboard</a>
+            <a href="/logout" style="color: white; text-decoration: none;">logout</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{{.user_count}}</div>
+                <div class="stat-label">total users</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{.node_count}}</div>
+                <div class="stat-label">total nodes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{.container_count}}</div>
+                <div class="stat-label">running environments</div>
+            </div>
+        </div>
+        
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('nodes')">nodes</button>
+            <button class="nav-tab" onclick="showTab('users')">users</button>
+        </div>
+        
+        <div id="nodes-tab" class="tab-content active">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>node management</h2>
+                    <button class="button" onclick="showModal('add-node-modal')">add node</button>
+                </div>
+                
+                <table class="table" id="nodes-table">
+                    <thead>
+                        <tr>
+                            <th>name</th>
+                            <th>hostname</th>
+                            <th>resources</th>
+                            <th>status</th>
+                            <th>last seen</th>
+                            <th>actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="users-tab" class="tab-content">
+            <div class="card">
+                <h2>user management</h2>
+                
+                <table class="table" id="users-table">
+                    <thead>
+                        <tr>
+                            <th>username</th>
+                            <th>display name</th>
+                            <th>email</th>
+                            <th>container</th>
+                            <th>admin</th>
+                            <th>created</th>
+                            <th>actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div id="add-node-modal" class="modal">
+        <div class="modal-content">
+            <button class="close" onclick="hideModal('add-node-modal')">&times;</button>
+            <h3>add node</h3>
+            
+            <div class="form-group">
+                <label for="node-name">node name:</label>
+                <input type="text" id="node-name" placeholder="node-1">
+            </div>
+            
+            <div class="form-group">
+                <label for="node-hostname">hostname:</label>
+                <input type="text" id="node-hostname" placeholder="192.168.1.100">
+            </div>
+            
+            <div class="form-group">
+                <label for="node-memory">max mem (mb):</label>
+                <input type="number" id="node-memory" value="4096">
+            </div>
+            
+            <div class="form-group">
+                <label for="node-cpu">max cores:</label>
+                <input type="number" id="node-cpu" value="4">
+            </div>
+            
+            <div class="form-group">
+                <label for="node-storage">max storage (gb):</label>
+                <input type="number" id="node-storage" value="15">
+            </div>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                <button class="button" onclick="addNode()">add this bish</button>
+                <button class="button secondary" onclick="hideModal('add-node-modal')">cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.nav-tab').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+            if (tabName === 'nodes') {
+                loadNodes();
+            } else if (tabName === 'users') {
+                loadUsers();
+            }
+        }
+        
+        function showModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+        
+        function hideModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        function loadNodes() {
+            fetch('/admin/nodes')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.querySelector('#nodes-table tbody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.nodes) {
+                        data.nodes.forEach(node => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${node.name}</td>
+                                <td>${node.hostname}</td>
+                                <td>${node.max_memory_mb}mb / ${node.max_cpu_cores} cores / ${node.max_storage_gb}gb</td>
+                                <td><span class="status ${node.is_online ? 'online' : 'offline'}">${node.is_online ? 'online' : 'offline'}</span></td>
+                                <td>${node.last_seen ? new Date(node.last_seen).toLocaleString() : 'never'}</td>
+                                <td class="actions">
+                                    <button class="button btn-small secondary" onclick="generateToken(${node.id})">new toekn</button>
+                                    <button class="button btn-small" style="background: #dc3545;" onclick="deleteNode(${node.id})">delete</button>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('erorr loading nodes:', error);
+                });
+        }
+        
+        function loadUsers() {
+            fetch('/admin/users')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.querySelector('#users-table tbody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.users) {
+                        data.users.forEach(user => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${user.username}</td>
+                                <td>${user.display_name}</td>
+                                <td>${user.email}</td>
+                                <td>${user.container_id ? user.container_id : 'None'}</td>
+                                <td>${user.is_admin ? 'yes' : 'no'}</td>
+                                <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                                <td class="actions">
+                                    <button class="button btn-small" style="background: #dc3545;" onclick="deleteUser(${user.id})">Delete</button>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('error loading users:', error);
+                });
+        }
+        
+        function addNode() {
+            const name = document.getElementById('node-name').value;
+            const hostname = document.getElementById('node-hostname').value;
+            const memory = parseInt(document.getElementById('node-memory').value);
+            const cpu = parseInt(document.getElementById('node-cpu').value);
+            const storage = parseInt(document.getElementById('node-storage').value);
+            
+            if (!name || !hostname) {
+                alert('fill in name and hostname, seriously. what are you, blind?');
+                return;
+            }
+            
+            fetch('/admin/nodes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    hostname: hostname,
+                    max_memory_mb: memory,
+                    max_cpu_cores: cpu,
+                    max_storage_gb: storage
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert('node created. token: ' + data.token);
+                    hideModal('add-node-modal');
+                    loadNodes();
+                    
+                    document.getElementById('node-name').value = '';
+                    document.getElementById('node-hostname').value = '';
+                    document.getElementById('node-memory').value = '4096';
+                    document.getElementById('node-cpu').value = '4';
+                    document.getElementById('node-storage').value = '15';
+                }
+            })
+            .catch(error => {
+                alert('error: ' + error);
+            });
+        }
+        
+        function generateToken(nodeId) {
+            if (confirm('gen a new token for this node?old token will be invalidated.')) {
+                fetch('/admin/nodes/' + nodeId + '/token', {
+                    method: 'GET'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('error: ' + data.error);
+                    } else {
+                        alert('new token generated: ' + data.token);
+                    }
+                })
+                .catch(error => {
+                    alert('error: ' + error);
+                });
+            }
+        }
+        
+        function deleteNode(nodeId) {
+            if (confirm('delete this node? All containers on this node will be lost!')) {
+                fetch('/admin/nodes/' + nodeId, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('error: ' + data.error);
+                    } else {
+                        alert('node deleted successfully!');
+                        loadNodes();
+                    }
+                })
+                .catch(error => {
+                    alert('error: ' + error);
+                });
+            }
+        }
+        
+        function deleteUser(userId) {
+            if (confirm('delete this user? their container and data will be lost (gg no re)')) {
+                fetch('/admin/users/' + userId, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('error: ' + data.error);
+                    } else {
+                        alert('user deleted successfully!');
+                        loadUsers();
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+            }
+        }
+        loadNodes();
+    </script>
+</body>
+</html>

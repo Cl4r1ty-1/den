@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - den</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        
+        .method-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .method-option {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        
+        .method-option.active {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .method-option h3 {
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        
+        .method-option p {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .form-group {
+            margin: 1rem 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+        
+        .form-group textarea {
+            height: 120px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .button.secondary {
+            background: #6c757d;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+        
+        .code-block {
+            background: #2d3748;
+            color: #68d391;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🏠 Den</div>
+        <div>
+            <a href="/user/dashboard" style="color: white; text-decoration: none;">← Back to Dashboard</a>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="card">
+            <h2>ssh config</h2>
+            <p>how would you like to access your environment?</p>
+            
+            <div class="method-selector">
+                <div class="method-option active" onclick="selectMethod('password')">
+                    <h3>password</h3>
+                    <p>basic bitch type shit</p>
+                </div>
+                <div class="method-option" onclick="selectMethod('key')">
+                    <h3>pubkey</h3>
+                    <p>woah! look at this gentoo user</p>
+                </div>
+            </div>
+            
+            <div id="password-form">
+                <div class="info-box">
+                    <strong>password auth</strong><br>
+                    use a strong password, generally most aren't actually secure
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">password:</label>
+                    <input type="password" id="password" placeholder="enter a strong password">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password-confirm">confirm password:</label>
+                    <input type="password" id="password-confirm" placeholder="confirm your password">
+                </div>
+                
+                <button class="button" onclick="savePassword()">set password</button>
+            </div>
+            
+            <div id="key-form" class="hidden">
+                <div class="info-box">
+                    <strong>public key authentication</strong><br>
+                    paste your ssh public key below. if you don't have one, generate it with:<br>
+                    <div class="code-block">ssh-keygen -t rsa -b 4096 -C "your@email.com"</div>
+                    then copy the contents of <code>~/.ssh/id_rsa.pub</code> or whatever the file is named.
+                </div>
+                
+                <div class="form-group">
+                    <label for="public-key">ssh pubkey:</label>
+                    <textarea id="public-key" placeholder="ssh-rsa AAAAB3NzaC1yc2EAAAA... your@email.com"></textarea>
+                </div>
+                
+                <button class="button" onclick="savePublicKey()">set pubkey</button>
+            </div>
+            
+            <div class="info-box" style="margin-top: 2rem;">
+                <strong>after configuring ssh access:</strong><br>
+                you can connect to your environment using:<br>
+                <div class="code-block">ssh {{.user.Username}}@hack.kim</div>
+                this will automatically connect you to your personal environment.
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentMethod = 'password';
+        
+        function selectMethod(method) {
+            currentMethod = method;
+            document.querySelectorAll('.method-option').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            event.target.closest('.method-option').classList.add('active');
+            document.getElementById('password-form').classList.toggle('hidden', method !== 'password');
+            document.getElementById('key-form').classList.toggle('hidden', method !== 'key');
+        }
+        
+        function savePassword() {
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('password-confirm').value;
+            
+            if (!password) {
+                alert('enter a password.');
+                return;
+            }
+            
+            if (password !== confirm) {
+                alert('passwords do not match.');
+                return;
+            }
+            
+            if (password.length < 8) {
+                alert('password must be at least 8 characters long.');
+                return;
+            }
+            
+            fetch('/user/ssh-setup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    method: 'password',
+                    password: password
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('error: ' + data.error);
+                } else {
+                    alert('password set successfully. you can now ssh into to your environment.');
+                }
+            })
+            .catch(error => {
+                alert('error: ' + error);
+            });
+        }
+        
+        function savePublicKey() {
+            const publicKey = document.getElementById('public-key').value.trim();
+            
+            if (!publicKey) {
+                alert('please enter your ssh public key.');
+                return;
+            }
+            if (!publicKey.startsWith('ssh-rsa') && !publicKey.startsWith('ssh-ed25519')) {
+                alert('please enter a valid ssh pubkey (should start with ssh-rsa or ssh-ed25519).');
+                return;
+            }
+            
+            fetch('/user/ssh-setup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    method: 'key',
+                    public_key: publicKey
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('error: ' + data.error);
+                } else {
+                    alert('pubkey set successfully. you can now ssh into to your environment.');
+                }
+            })
+            .catch(error => {
+                alert('error: ' + error);
+            });
+        }
+    </script>
+</body>
+</html>

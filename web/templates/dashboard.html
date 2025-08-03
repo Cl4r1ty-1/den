@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - den</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .welcome {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .welcome h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .welcome p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+        
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .status.running {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.creating {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status.none {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .button.secondary {
+            background: #6c757d;
+        }
+        
+        .button.danger {
+            background: #dc3545;
+        }
+        
+        .container-info {
+            margin: 1rem 0;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 0.5rem 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .subdomain-list {
+            margin: 1rem 0;
+        }
+        
+        .subdomain-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .subdomain-url {
+            font-family: monospace;
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin: 1rem 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .ssh-command {
+            background: #2d3748;
+            color: #68d391;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: monospace;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">den</div>
+        <div class="user-info">
+            <span>{{.user.DisplayName}}</span>
+            <span>({{.user.Username}})</span>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="welcome">
+            <h1>welcome to your den, {{.user.DisplayName}}!</h1>
+            <p>your cozy *nix system</p>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>status</h2>
+                {{if .container}}
+                    <div class="status running">running</div>
+                    <div class="container-info">
+                        <div class="info-row">
+                            <span>container id:</span>
+                            <span>{{.container.ID}}</span>
+                        </div>
+                        <div class="info-row">
+                            <span>ip address:</span>
+                            <span>{{.container.IPAddress}}</span>
+                        </div>
+                        <div class="info-row">
+                            <span>memory:</span>
+                            <span>{{.container.MemoryMB}}MB</span>
+                        </div>
+                        <div class="info-row">
+                            <span>cpu cores:</span>
+                            <span>{{.container.CPUCores}}</span>
+                        </div>
+                        <div class="info-row">
+                            <span>storage:</span>
+                            <span>{{.container.StorageGB}}GB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="ssh-command">
+                        ssh {{.user.Username}}@hack.kim
+                    </div>
+                    
+                    <a href="/user/ssh-setup" class="button">configure ssh access</a>
+                {{else}}
+                    <div class="status none">no environment</div>
+                    <p>you don't have an environment yet. create one to get started</p>
+                    <br>
+                    <button class="button" onclick="createContainer()">Create Container</button>
+                {{end}}
+            </div>
+            <div class="card">
+                <h2>subdomains</h2>
+                <div class="subdomain-list">
+                    {{range .subdomains}}
+                    <div class="subdomain-item">
+                        <div>
+                            <div class="subdomain-url">{{.Subdomain}}.hack.kim</div>
+                            <div> -> port {{.TargetPort}}</div>
+                        </div>
+                        <button class="button danger" onclick="deleteSubdomain('{{.ID}}')">delete</button>
+                    </div>
+                    {{else}}
+                    <p>no subdomains configured yet.</p>
+                    {{end}}
+                </div>
+                
+                {{if .container}}
+                <div class="form-group">
+                    <label for="subdomain">create new subdomain:</label>
+                    <input type="text" id="subdomain" placeholder="myproject">
+                </div>
+                <div class="form-group">
+                    <label for="port">target port:</label>
+                    <input type="number" id="port" placeholder="3000" min="1024" max="65535">
+                </div>
+                <button class="button" onclick="createSubdomain()">create subdomain</button>
+                {{else}}
+                <p>create an environment first to manage subdomains</p>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function createContainer() {
+            if (confirm('create your personal environment? this will take a few minutes.')) {
+                fetch('/user/container/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('error: ' + data.error);
+                    } else {
+                        alert('container creation started! please refresh the page in a few minutes.');
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    alert('error: ' + error);
+                });
+            }
+        }
+        
+        function createSubdomain() {
+            const subdomain = document.getElementById('subdomain').value;
+            const port = parseInt(document.getElementById('port').value);
+            
+            if (!subdomain || !port) {
+                alert('please fill in both subdomain and port.');
+                return;
+            }
+            
+            fetch('/user/subdomains', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    subdomain: subdomain,
+                    target_port: port
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('error: ' + data.error);
+                } else {
+                    alert('subdomain created successfully!');
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        }
+        
+        function deleteSubdomain(id) {
+            if (confirm('Delete this subdomain?')) {
+                fetch('/user/subdomains/' + id, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Error: ' + data.error);
+                    } else {
+                        alert('Subdomain deleted successfully!');
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
