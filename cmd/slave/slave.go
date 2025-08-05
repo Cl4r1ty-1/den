@@ -268,11 +268,14 @@ func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	log.Printf("creating container for user %d (%s)", req.UserID, req.Username)
 	container, err := s.manager.CreateContainer(req.UserID, req.Username)
 	if err != nil {
+		log.Printf("container creation failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("container created successfully: %+v", container)
 	
 	json.NewEncoder(w).Encode(container)
 }

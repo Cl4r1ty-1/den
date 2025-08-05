@@ -12,29 +12,21 @@ import (
 	"time"
 )
 
-type Manager struct {
+type ManagerLXD struct {
 	defaultMemoryMB  int
 	defaultCPUCores  int
 	defaultStorageGB int
 }
 
-type ContainerInfo struct {
-	ID       string
-	Name     string
-	Status   string
-	IP       string
-	SSHPort  int
-}
-
-func NewManager() (*Manager, error) {
-	return &Manager{
+func NewManagerLXD() (*ManagerLXD, error) {
+	return &ManagerLXD{
 		defaultMemoryMB:  4096,
 		defaultCPUCores:  4,
 		defaultStorageGB: 15,
 	}, nil
 }
 
-func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, error) {
+func (m *ManagerLXD) CreateContainer(userID int, username string) (*ContainerInfo, error) {
 	containerName := fmt.Sprintf("den-%s", username)
 	
 	cmd := exec.Command("lxc", "launch", "ubuntu:22.04", containerName)
@@ -56,6 +48,7 @@ func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, 
 		exec.Command("lxc", "delete", containerName, "--force").Run()
 		return nil, fmt.Errorf("failed to setup user: %w", err)
 	}
+	
 	info, err := m.getContainerInfo(containerName)
 	if err != nil {
 		exec.Command("lxc", "delete", containerName, "--force").Run()
@@ -65,7 +58,7 @@ func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, 
 	return info, nil
 }
 
-func (m *Manager) configureContainer(name string) error {
+func (m *ManagerLXD) configureContainer(name string) error {
 	configs := [][]string{
 		{"lxc", "config", "set", name, "limits.memory", fmt.Sprintf("%dMB", m.defaultMemoryMB)},
 		{"lxc", "config", "set", name, "limits.cpu", strconv.Itoa(m.defaultCPUCores)},
@@ -83,7 +76,7 @@ func (m *Manager) configureContainer(name string) error {
 	return nil
 }
 
-func (m *Manager) waitForContainer(name string) error {
+func (m *ManagerLXD) waitForContainer(name string) error {
 	maxAttempts := 30
 	for i := 0; i < maxAttempts; i++ {
 		cmd := exec.Command("lxc", "exec", name, "--", "echo", "ready")
@@ -95,7 +88,7 @@ func (m *Manager) waitForContainer(name string) error {
 	return fmt.Errorf("container did not become ready in time")
 }
 
-func (m *Manager) setupUserInContainer(containerName, username string) error {
+func (m *ManagerLXD) setupUserInContainer(containerName, username string) error {
 	commands := [][]string{
 		{"lxc", "exec", containerName, "--", "useradd", "-m", "-s", "/bin/bash", username},
 		{"lxc", "exec", containerName, "--", "usermod", "-aG", "sudo", username},
@@ -118,7 +111,7 @@ func (m *Manager) setupUserInContainer(containerName, username string) error {
 	return nil
 }
 
-func (m *Manager) getContainerInfo(name string) (*ContainerInfo, error) {
+func (m *ManagerLXD) getContainerInfo(name string) (*ContainerInfo, error) {
 	cmd := exec.Command("lxc", "list", name, "-c", "4", "--format", "csv")
 	output, err := cmd.Output()
 	if err != nil {
@@ -145,7 +138,8 @@ func (m *Manager) getContainerInfo(name string) (*ContainerInfo, error) {
 		SSHPort: 22,
 	}, nil
 }
-func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
+
+func (m *ManagerLXD) ListContainers() ([]*ContainerInfo, error) {
 	cmd := exec.Command("lxc", "list", "--format", "csv", "-c", "n,s,4")
 	output, err := cmd.Output()
 	if err != nil {
@@ -190,7 +184,7 @@ func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
 	return containers, nil
 }
 
-func (m *Manager) GetContainerStatus(containerID string) (string, error) {
+func (m *ManagerLXD) GetContainerStatus(containerID string) (string, error) {
 	cmd := exec.Command("lxc", "info", containerID)
 	output, err := cmd.Output()
 	if err != nil {
@@ -210,7 +204,7 @@ func (m *Manager) GetContainerStatus(containerID string) (string, error) {
 	return "unknown", nil
 }
 
-func (m *Manager) DeleteContainer(containerID string) error {
+func (m *ManagerLXD) DeleteContainer(containerID string) error {
 	stopCmd := exec.Command("lxc", "stop", containerID)
 	stopCmd.Run()
 	deleteCmd := exec.Command("lxc", "delete", containerID)
@@ -221,7 +215,7 @@ func (m *Manager) DeleteContainer(containerID string) error {
 	return nil
 }
 
-func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) error {
+func (m *ManagerLXD) SetupSSHAccess(containerName, username, publicKey string) error {
 	authorizedKeysPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", username)
 	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-c", 
 		fmt.Sprintf("echo '%s' > %s", publicKey, authorizedKeysPath))
@@ -242,7 +236,7 @@ func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) erro
 	return nil
 }
 
-func (m *Manager) SetupSSHPassword(containerName, username, password string) error {
+func (m *ManagerLXD) SetupSSHPassword(containerName, username, password string) error {
 	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-c", 
 		fmt.Sprintf("echo '%s:%s' | chpasswd", username, password))
 	if err := cmd.Run(); err != nil {
@@ -252,87 +246,15 @@ func (m *Manager) SetupSSHPassword(containerName, username, password string) err
 	return nil
 }
 
-func (m *Manager) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
-	if protocol == "" {
-		protocol = "tcp"
-	}
-	containerIP, err := m.getContainerIP(containerID)
-	if err != nil {
-		return fmt.Errorf("failed to get container IP: %w", err)
-	}
-	dnatCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", 
-		"-p", protocol, "--dport", strconv.Itoa(externalPort),
-		"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerIP, internalPort))
-	if err := dnatCmd.Run(); err != nil {
-		return fmt.Errorf("failed to add DNAT rule: %w", err)
-	}
-	
-	snatCmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", 
-		"-s", containerIP, "-j", "MASQUERADE")
-	if err := snatCmd.Run(); err != nil {
-		exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", 
-			"-p", protocol, "--dport", strconv.Itoa(externalPort),
-			"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerIP, internalPort)).Run()
-		return fmt.Errorf("failed to add SNAT rule: %w", err)
-	}
-	allowCmd := exec.Command("iptables", "-A", "INPUT", 
-		"-p", protocol, "--dport", strconv.Itoa(externalPort), "-j", "ACCEPT")
-	if err := allowCmd.Run(); err != nil {
-		exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", 
-			"-p", protocol, "--dport", strconv.Itoa(externalPort),
-			"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerIP, internalPort)).Run()
-		return fmt.Errorf("failed to add INPUT rule: %w", err)
-	}
-	
-	return nil
+func (m *ManagerLXD) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
+	return fmt.Errorf("port mapping not implemented yet")
 }
 
-func (m *Manager) UnmapPort(containerID string, externalPort int, protocol string) error {
-	if protocol == "" {
-		protocol = "tcp"
-	}
-	
-	containerIP, err := m.getContainerIP(containerID)
-	if err != nil {
-		return fmt.Errorf("failed to get container IP: %w", err)
-	}
-	
-
-	dnatCmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", 
-		"-p", protocol, "--dport", strconv.Itoa(externalPort),
-		"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerIP, externalPort))
-	dnatCmd.Run()
-	
-	allowCmd := exec.Command("iptables", "-D", "INPUT", 
-		"-p", protocol, "--dport", strconv.Itoa(externalPort), "-j", "ACCEPT")
-	allowCmd.Run()
-	
-	return nil
+func (m *ManagerLXD) UnmapPort(containerID string, externalPort int, protocol string) error {
+	return fmt.Errorf("port unmapping not implemented yet")
 }
 
-func (m *Manager) getContainerIP(containerID string) (string, error) {
-	cmd := exec.Command("lxc", "list", containerID, "-c", "4", "--format", "csv")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get container IP: %w", err)
-	}
-
-	ip := strings.TrimSpace(string(output))
-	if ip == "" {
-		return "", fmt.Errorf("no IP address found for container")
-	}
-
-	re := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(ip)
-	if len(matches) < 2 {
-		return "", fmt.Errorf("could not parse IP address: %s", ip)
-	}
-	ip = matches[1]
-
-	return ip, nil
-}
-
-func (m *Manager) GetRandomPort() (int, error) {
+func (m *ManagerLXD) GetRandomPort() (int, error) {
 	minPort := 20000
 	maxPort := 65535
 	
