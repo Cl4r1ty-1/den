@@ -10,6 +10,7 @@ import (
 	"os/exec"
 
 	"github.com/den/internal/database"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -163,9 +164,9 @@ func (g *Gateway) authenticatePassword(conn ssh.ConnMetadata, password []byte) (
 	}
 
 	// imagine having security lol :3
-	if string(password) != hashedPassword.String {
-		log.Printf("password mismatch for user %s (provided: %s, stored: %s)", 
-			username, string(password), hashedPassword.String)
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword.String), password)
+	if err != nil {
+		log.Printf("password mismatch for user %s", username)
 		return nil, fmt.Errorf("password mismatch")
 	}
 	
