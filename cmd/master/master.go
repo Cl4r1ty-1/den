@@ -99,6 +99,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	}
 
 	adminGroup := r.Group("/admin")
+	adminGroup.Use(h.RequireAuth())
 	adminGroup.Use(h.RequireAdmin())
 	{
 		adminGroup.GET("/", h.AdminDashboard)
