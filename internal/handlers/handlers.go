@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -225,6 +226,7 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "container already exists"})
 		return
 	}
+	
 	var nodeID int
 	var nodeHostname string
 	err := h.db.QueryRow(`
@@ -236,58 +238,92 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available nodes"})
 		return
 	}
-	containerID := fmt.Sprintf("den-%s", user.Username)
-
-	// Create container record
-	_, err = h.db.Exec(`
-		INSERT INTO containers (id, user_id, node_id, name, status, memory_mb, cpu_cores, storage_gb)
-		VALUES ($1, $2, $3, $4, 'creating', 4096, 4, 15)
-	`, containerID, user.ID, nodeID, containerID)
+	slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+	payload := map[string]interface{}{
+		"user_id":   user.ID,
+		"username":  user.Username,
+	}
+	
+	data, err := json.Marshal(payload)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create container record"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
 		return
 	}
+	
+	resp, err := http.Post(slaveURL+"/api/containers", "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to communicate with slave node"})
+		return
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to create container"})
+		return
+	}
+	
+	var containerInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&containerInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode container info"})
+		return
+	}
+	containerID := containerInfo["ID"].(string)
 	_, err = h.db.Exec(`
-		UPDATE users SET container_id = $1, updated_at = NOW() WHERE id = $2
-	`, containerID, user.ID)
+		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb)
+		VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9)
+	`, containerID, user.ID, nodeID, containerInfo["Name"], 
+		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
+		return
+	}
+	_, err = h.db.Exec("UPDATE users SET container_id = $1 WHERE id = $2", containerID, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
 		return
 	}
-	// todo: do this stuff (make lxc)
+	
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "Container creation started",
+		"message":      "Container created successfully",
 		"container_id": containerID,
+		"ip_address":   containerInfo["IP"],
+		"ssh_port":     containerInfo["SSHPort"],
 	})
 }
 
 func (h *Handler) SubdomainManagement(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
-	
-	rows, err := h.db.Query(`
-		SELECT id, subdomain, target_port, is_active, created_at
-		FROM subdomains WHERE user_id = $1
-		ORDER BY created_at DESC
-	`, user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+	if c.GetHeader("Accept") == "application/json" || c.Query("format") == "json" {
+		user := c.MustGet("user").(*models.User)
+		
+		rows, err := h.db.Query(`
+			SELECT id, subdomain, target_port, is_active, created_at
+			FROM subdomains WHERE user_id = $1
+			ORDER BY created_at DESC
+		`, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+		defer rows.Close()
+
+		var subdomains []models.Subdomain
+		for rows.Next() {
+			var subdomain models.Subdomain
+			err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
+				&subdomain.IsActive, &subdomain.CreatedAt)
+			if err != nil {
+				continue
+			}
+			subdomain.UserID = user.ID
+			subdomains = append(subdomains, subdomain)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"subdomains": subdomains})
 		return
 	}
-	defer rows.Close()
-
-	var subdomains []models.Subdomain
-	for rows.Next() {
-		var subdomain models.Subdomain
-		err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
-			&subdomain.IsActive, &subdomain.CreatedAt)
-		if err != nil {
-			continue
-		}
-		subdomain.UserID = user.ID
-		subdomains = append(subdomains, subdomain)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"subdomains": subdomains})
+	c.HTML(http.StatusOK, "subdomains.html", gin.H{
+		"title": "Subdomain Management",
+	})
 }
 
 func (h *Handler) CreateSubdomain(c *gin.Context) {
@@ -577,23 +613,152 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 }
 
 func (h *Handler) APICreateContainer(c *gin.Context) {
-	// implement this, implement that, etc.
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	var req struct {
+		UserID   int    `json:"user_id" binding:"required"`
+		Username string `json:"username" binding:"required"`
+		NodeID   int    `json:"node_id" binding:"required"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var nodeHostname string
+	err := h.db.QueryRow("SELECT hostname FROM nodes WHERE id = $1", req.NodeID).Scan(&nodeHostname)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node ID"})
+		return
+	}
+	slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+	payload := map[string]interface{}{
+		"user_id":   req.UserID,
+		"username":  req.Username,
+	}
+	
+	data, err := json.Marshal(payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
+		return
+	}
+	
+	resp, err := http.Post(slaveURL+"/api/containers", "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to communicate with slave node"})
+		return
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to create container"})
+		return
+	}
+	
+	var containerInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&containerInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode container info"})
+		return
+	}
+	containerID := containerInfo["ID"].(string)
+	_, err = h.db.Exec(`
+		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, containerID, req.UserID, req.NodeID, containerInfo["Name"], "running", 
+		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
+		return
+	}
+	_, err = h.db.Exec("UPDATE users SET container_id = $1 WHERE id = $2", containerID, req.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, containerInfo)
 }
 
 func (h *Handler) APIGetContainer(c *gin.Context) {
-	// blah blah blah
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	containerID := c.Param("id")
+	
+	var container models.Container
+	err := h.db.QueryRow(`
+		SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, created_at, updated_at
+		FROM containers WHERE id = $1
+	`, containerID).Scan(&container.ID, &container.UserID, &container.NodeID, &container.Name,
+		&container.Status, &container.IPAddress, &container.SSHPort, &container.MemoryMB,
+		&container.CPUCores, &container.StorageGB, &container.CreatedAt, &container.UpdatedAt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, container)
 }
 
 func (h *Handler) APIDeleteContainer(c *gin.Context) {
-	// im lazy, sue me
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	containerID := c.Param("id")
+	var nodeHostname string
+	err := h.db.QueryRow(`
+		SELECT n.hostname FROM nodes n
+		JOIN containers c ON c.node_id = n.id
+		WHERE c.id = $1
+	`, containerID).Scan(&nodeHostname)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
+		return
+	}
+	slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+	req, err := http.NewRequest("DELETE", slaveURL+"/api/containers/"+containerID, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+	
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to communicate with slave node"})
+		return
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to delete container"})
+		return
+	}
+	_, err = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove container from database"})
+		return
+	}
+	_, err = h.db.Exec("UPDATE users SET container_id = NULL WHERE container_id = $1", containerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "container deleted successfully"})
 }
 
 func (h *Handler) APIUpdateContainerStatus(c *gin.Context) {
-	// implement this you buffoon
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	containerID := c.Param("id")
+	
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	_, err := h.db.Exec("UPDATE containers SET status = $1, updated_at = NOW() WHERE id = $2", req.Status, containerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update container status"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "status updated successfully"})
 }
 func generateState() string {
 	bytes := make([]byte, 16)

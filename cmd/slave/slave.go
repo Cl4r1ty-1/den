@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -232,5 +233,135 @@ func (s *Slave) updateContainerStatus() error {
 }
 
 func (s *Slave) startAPIServer() {
-	log.Println("boooo i haven't implemented this yet")
+	mux := http.NewServeMux()
+	
+	// fuck this shit i'm out
+	mux.HandleFunc("/api/containers", s.handleCreateContainer)
+	mux.HandleFunc("/api/containers/", s.handleContainerOperations)
+	mux.HandleFunc("/api/ports", s.handlePortMapping)
+	mux.HandleFunc("/api/ssh", s.handleSSHSetup)
+	
+	server := &http.Server{
+		Addr:    ":8081",
+		Handler: mux,
+	}
+	
+	log.Println("slave api server listening on :8081")
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("slave api server failed: %v", err)
+	}
+}
+
+func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		UserID   int    `json:"user_id"`
+		Username string `json:"username"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	container, err := s.manager.CreateContainer(req.UserID, req.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	json.NewEncoder(w).Encode(container)
+}
+
+func (s *Slave) handleContainerOperations(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	
+	containerID := parts[3]
+	
+	switch r.Method {
+	case http.MethodGet:
+		status, err := s.manager.GetContainerStatus(containerID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": status})
+		
+	case http.MethodDelete:
+		if err := s.manager.DeleteContainer(containerID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func (s *Slave) handlePortMapping(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		ContainerID string `json:"container_id"`
+		InternalPort int   `json:"internal_port"`
+		ExternalPort int   `json:"external_port"`
+		Protocol    string `json:"protocol"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	if err := s.manager.MapPort(req.ContainerID, req.InternalPort, req.ExternalPort, req.Protocol); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Slave) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		ContainerID string `json:"container_id"`
+		Username    string `json:"username"`
+		PublicKey   string `json:"public_key"`
+		Password    string `json:"password"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	var err error
+	if req.PublicKey != "" {
+		err = s.manager.SetupSSHAccess(req.ContainerID, req.Username, req.PublicKey)
+	} else if req.Password != "" {
+		err = s.manager.SetupSSHPassword(req.ContainerID, req.Username, req.Password)
+	} else {
+		http.Error(w, "either public_key or password must be provided", http.StatusBadRequest)
+		return
+	}
+	
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	w.WriteHeader(http.StatusOK)
 }

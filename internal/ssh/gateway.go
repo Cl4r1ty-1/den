@@ -1,8 +1,10 @@
 package ssh
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -117,7 +119,7 @@ func (g *Gateway) authenticateUser(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 		log.Printf("Failed to parse stored key for %s: %v", username, err)
 		return nil, fmt.Errorf("invalid stored key")
 	}
-	if !ssh.KeysEqual(key, storedPublicKey) {
+	if !bytes.Equal(key.Marshal(), storedPublicKey.Marshal()) {
 		return nil, fmt.Errorf("key mismatch")
 	}
 	permissions := &ssh.Permissions{
@@ -291,14 +293,14 @@ func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChann
 			defer targetChannel.Close()
 			go func() {
 				defer targetChannel.CloseWrite()
-				_, err := targetChannel.ReadFrom(channel)
+				_, err := io.Copy(targetChannel, channel)
 				if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 					log.Printf("errror copying from client to target: %v", err)
 				}
 			}()
 			
 			defer channel.CloseWrite()
-			_, err := channel.ReadFrom(targetChannel)
+			_, err := io.Copy(channel, targetChannel)
 			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 				log.Printf("error copying from target to client: %v", err)
 			}

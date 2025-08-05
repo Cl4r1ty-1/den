@@ -12,7 +12,6 @@ import (
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
-	"github.com/den/internal/dns"
 	"github.com/den/internal/handlers"
 	"github.com/den/internal/ssh"
 	"github.com/gin-gonic/gin"
@@ -34,7 +33,6 @@ func Run() error {
 	}
 
 	authService := auth.NewService(db)
-	dnsService := dns.NewService()
 	
 	sshGateway := ssh.NewGateway(db)
 	go func() {

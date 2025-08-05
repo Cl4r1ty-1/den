@@ -3,12 +3,11 @@ package container
 import (
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/den/internal/models"
+	"github.com/lxc/go-lxc"
 )
 
 type Manager struct {
@@ -36,86 +35,120 @@ func NewManager() (*Manager, error) {
 
 func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, error) {
 	containerName := fmt.Sprintf("den-%s", username)
+	
 	// lxc can be a piece of shit istg
-	cmd := exec.Command("lxc", "launch", "ubuntu:22.04", containerName)
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to create container: %w", err)
+	container, err := lxc.NewContainer(containerName, lxc.DefaultConfigPath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container object: %w", err)
 	}
-	if err := m.configureContainer(containerName); err != nil {
-		m.DeleteContainer(containerName)
+	defer container.Release()
+	
+	if err := m.configureContainer(container); err != nil {
 		return nil, fmt.Errorf("failed to configure container: %w", err)
 	}
-
-	if err := m.waitForContainer(containerName); err != nil {
-		m.DeleteContainer(containerName)
+	
+	if err := container.Create(lxc.TemplateOptions{
+		Template: "ubuntu",
+		Release:  "22.04",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create container: %w", err)
+	}
+	
+	if err := container.Start(); err != nil {
+		container.Destroy()
+		return nil, fmt.Errorf("failed to start container: %w", err)
+	}
+	
+	if err := m.waitForContainer(container); err != nil {
+		container.Stop()
+		container.Destroy()
 		return nil, fmt.Errorf("container failed to start: %w", err)
 	}
-	if err := m.setupUserInContainer(containerName, username); err != nil {
-		m.DeleteContainer(containerName)
+	if err := m.setupUserInContainer(container, username); err != nil {
+		container.Stop()
+		container.Destroy()
 		return nil, fmt.Errorf("failed to setup user: %w", err)
 	}
-	info, err := m.getContainerInfo(containerName)
+	info, err := m.getContainerInfo(container)
 	if err != nil {
-		m.DeleteContainer(containerName)
+		container.Stop()
+		container.Destroy()
 		return nil, fmt.Errorf("failed to get container info: %w", err)
 	}
-
+	
 	return info, nil
 }
 
-func (m *Manager) configureContainer(name string) error {
+func (m *Manager) configureContainer(container *lxc.Container) error {
 	// i
 	// hate
 	// lxc
 	// so
 	// so
 	// muchhhhh
-	configs := [][]string{
-		{"lxc", "config", "set", name, "limits.memory", fmt.Sprintf("%dMB", m.defaultMemoryMB)},
-		{"lxc", "config", "set", name, "limits.cpu", strconv.Itoa(m.defaultCPUCores)},
-		{"lxc", "config", "device", "add", name, "root", "disk", "path=/", "pool=default", fmt.Sprintf("size=%dGB", m.defaultStorageGB)},
-		{"lxc", "config", "set", name, "security.nesting", "true"},
-		{"lxc", "config", "set", name, "security.privileged", "false"},
+	if err := container.SetConfigItem("lxc.limits.memory", fmt.Sprintf("%dMB", m.defaultMemoryMB)); err != nil {
+		return fmt.Errorf("failed to set memory limit: %w", err)
 	}
-
-	for _, config := range configs {
-		cmd := exec.Command(config[0], config[1:]...)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run config command %v: %w", config, err)
-		}
+	if err := container.SetConfigItem("lxc.limits.cpu", strconv.Itoa(m.defaultCPUCores)); err != nil {
+		return fmt.Errorf("failed to set CPU limit: %w", err)
 	}
-
+	if err := container.SetConfigItem("lxc.apparmor.profile", "unconfined"); err != nil {
+		return fmt.Errorf("failed to set apparmor profile: %w", err)
+	}
+	
+	if err := container.SetConfigItem("lxc.security.nesting", "true"); err != nil {
+		return fmt.Errorf("failed to set security nesting: %w", err)
+	}
+	
+	if err := container.SetConfigItem("lxc.security.privileged", "false"); err != nil {
+		return fmt.Errorf("failed to set security privileged: %w", err)
+	}
+	
+	if err := container.SetConfigItem("lxc.net.0.type", "veth"); err != nil {
+		return fmt.Errorf("failed to set network type: %w", err)
+	}
+	
+	if err := container.SetConfigItem("lxc.net.0.link", "lxdbr0"); err != nil {
+		return fmt.Errorf("failed to set network link: %w", err)
+	}
+	
+	if err := container.SetConfigItem("lxc.net.0.flags", "up"); err != nil {
+		return fmt.Errorf("failed to set network flags: %w", err)
+	}
+	
 	return nil
 }
 
-func (m *Manager) waitForContainer(name string) error {
+func (m *Manager) waitForContainer(container *lxc.Container) error {
 	maxAttempts := 30
 	for i := 0; i < maxAttempts; i++ {
-		cmd := exec.Command("lxc", "exec", name, "--", "echo", "ready")
-		if err := cmd.Run(); err == nil {
-			return nil
+		if container.State() == lxc.RUNNING {
+			_, err := container.RunCommand([]string{"echo", "ready"}, lxc.DefaultAttachOptions)
+			if err == nil {
+				return nil
+			}
 		}
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("container did not become ready in time")
 }
 
-func (m *Manager) setupUserInContainer(containerName, username string) error {
+func (m *Manager) setupUserInContainer(container *lxc.Container, username string) error {
 	commands := [][]string{
-		{"lxc", "exec", containerName, "--", "useradd", "-m", "-s", "/bin/bash", username},
-		{"lxc", "exec", containerName, "--", "usermod", "-aG", "sudo", username},
-		{"lxc", "exec", containerName, "--", "mkdir", "-p", fmt.Sprintf("/home/%s/.ssh", username)},
-		{"lxc", "exec", containerName, "--", "chown", fmt.Sprintf("%s:%s", username, username), fmt.Sprintf("/home/%s/.ssh", username)},
-		{"lxc", "exec", containerName, "--", "chmod", "700", fmt.Sprintf("/home/%s/.ssh", username)},
-		{"lxc", "exec", containerName, "--", "apt-get", "update"},
-		{"lxc", "exec", containerName, "--", "apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop"},
-		{"lxc", "exec", containerName, "--", "systemctl", "enable", "ssh"},
-		{"lxc", "exec", containerName, "--", "systemctl", "start", "ssh"},
+		{"useradd", "-m", "-s", "/bin/bash", username},
+		{"usermod", "-aG", "sudo", username},
+		{"mkdir", "-p", fmt.Sprintf("/home/%s/.ssh", username)},
+		{"chown", fmt.Sprintf("%s:%s", username, username), fmt.Sprintf("/home/%s/.ssh", username)},
+		{"chmod", "700", fmt.Sprintf("/home/%s/.ssh", username)},
+		{"apt-get", "update"},
+		{"apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop"},
+		{"systemctl", "enable", "ssh"},
+		{"systemctl", "start", "ssh"},
 	}
 
 	for _, cmd := range commands {
-		execCmd := exec.Command(cmd[0], cmd[1:]...)
-		if err := execCmd.Run(); err != nil {
+		_, err := container.RunCommand(cmd, lxc.DefaultAttachOptions)
+		if err != nil {
 			return fmt.Errorf("failed to run setup command %v: %w", cmd, err)
 		}
 	}
@@ -123,28 +156,30 @@ func (m *Manager) setupUserInContainer(containerName, username string) error {
 	return nil
 }
 
-func (m *Manager) getContainerInfo(name string) (*ContainerInfo, error) {
-	cmd := exec.Command("lxc", "list", name, "-c", "4", "--format", "csv")
-	output, err := cmd.Output()
+func (m *Manager) getContainerInfo(container *lxc.Container) (*ContainerInfo, error) {
+	ips, err := container.IPAddresses()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get container IP: %w", err)
+		return nil, fmt.Errorf("failed to get container IP addresses: %w", err)
 	}
-
-	ip := strings.TrimSpace(string(output))
-	if ip == "" {
+	if len(ips) == 0 {
 		return nil, fmt.Errorf("no IP address found for container")
 	}
-
-	re := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(ip)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("could not parse IP address: %s", ip)
+	
+	var ip string
+	for _, addr := range ips {
+		if strings.Contains(addr, ".") { 
+			ip = addr
+			break
+		}
 	}
-	ip = matches[1]
+	
+	if ip == "" {
+		return nil, fmt.Errorf("no ip address found for container")
+	}
 
 	return &ContainerInfo{
-		ID:      name,
-		Name:    name,
+		ID:      container.Name(),
+		Name:    container.Name(),
 		Status:  "running",
 		IP:      ip,
 		SSHPort: 22,
@@ -152,38 +187,43 @@ func (m *Manager) getContainerInfo(name string) (*ContainerInfo, error) {
 }
 
 func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
-	cmd := exec.Command("lxc", "list", "--format", "csv", "-c", "n,s,4")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	allContainers := lxc.Containers(lxc.DefaultConfigPath())
+	
 	var containers []*ContainerInfo
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, ",")
-		if len(parts) < 3 {
-			continue
-		}
-
-		name := parts[0]
-		status := parts[1]
-		ip := parts[2]
+	
+	for _, container := range allContainers {
+		defer container.Release()
+		
+		name := container.Name()
 		if !strings.HasPrefix(name, "den-") {
 			continue
 		}
-		if ip != "" {
-			re := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`)
-			matches := re.FindStringSubmatch(ip)
-			if len(matches) >= 2 {
-				ip = matches[1]
+		state := container.State()
+		var status string
+		switch state {
+		case lxc.RUNNING:
+			status = "running"
+		case lxc.STOPPED:
+			status = "stopped"
+		case lxc.STARTING:
+			status = "starting"
+		case lxc.STOPPING:
+			status = "stopping"
+		default:
+			status = "unknown"
+		}
+		ips, err := container.IPAddresses()
+		if err != nil {
+			continue
+		}
+		var ip string
+		for _, addr := range ips {
+			if strings.Contains(addr, ".") { 
+				ip = addr
+				break
 			}
 		}
+		
 		containers = append(containers, &ContainerInfo{
 			ID:      name,
 			Name:    name,
@@ -192,68 +232,173 @@ func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
 			SSHPort: 22,
 		})
 	}
-
+	
 	return containers, nil
 }
 
 func (m *Manager) GetContainerStatus(containerID string) (string, error) {
-	cmd := exec.Command("lxc", "info", containerID)
-	output, err := cmd.Output()
+	container, err := lxc.NewContainer(containerID, lxc.DefaultConfigPath())
 	if err != nil {
-		return "", fmt.Errorf("failed to get container status: %w", err)
+		return "", fmt.Errorf("failed to get container: %w", err)
 	}
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Status:") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
-		}
+	defer container.Release()
+	
+	state := container.State()
+	switch state {
+	case lxc.STOPPED:
+		return "stopped", nil
+	case lxc.STARTING:
+		return "starting", nil
+	case lxc.RUNNING:
+		return "running", nil
+	case lxc.STOPPING:
+		return "stopping", nil
+	case lxc.ABORTING:
+		return "aborting", nil
+	case lxc.FREEZING:
+		return "freezing", nil
+	case lxc.FROZEN:
+		return "frozen", nil
+	case lxc.THAWED:
+		return "thawed", nil
+	default:
+		return "unknown", nil
 	}
-
-	return "unknown", nil
 }
 
 func (m *Manager) DeleteContainer(containerID string) error {
-	stopCmd := exec.Command("lxc", "stop", containerID)
-	stopCmd.Run()
-	deleteCmd := exec.Command("lxc", "delete", containerID)
-	if err := deleteCmd.Run(); err != nil {
+	container, err := lxc.NewContainer(containerID, lxc.DefaultConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed to get container: %w", err)
+	}
+	defer container.Release()
+	if container.State() == lxc.RUNNING {
+		if err := container.Stop(); err != nil {
+			return fmt.Errorf("failed to stop container: %w", err)
+		}
+	}
+	if err := container.Destroy(); err != nil {
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
-
+	
 	return nil
 }
 
 func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) error {
+	container, err := lxc.NewContainer(containerName, lxc.DefaultConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed to get container: %w", err)
+	}
+	defer container.Release()
+	
 	authorizedKeysPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", username)
-	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-c", 
-		fmt.Sprintf("echo '%s' > %s", publicKey, authorizedKeysPath))
-	if err := cmd.Run(); err != nil {
+	_, err = container.RunCommand([]string{"bash", "-c", fmt.Sprintf("echo '%s' > %s", publicKey, authorizedKeysPath)}, lxc.DefaultAttachOptions)
+	if err != nil {
 		return fmt.Errorf("failed to write public key: %w", err)
 	}
-	chownCmd := exec.Command("lxc", "exec", containerName, "--", "chown", 
-		fmt.Sprintf("%s:%s", username, username), authorizedKeysPath)
-	if err := chownCmd.Run(); err != nil {
+	
+	_, err = container.RunCommand([]string{"chown", fmt.Sprintf("%s:%s", username, username), authorizedKeysPath}, lxc.DefaultAttachOptions)
+	if err != nil {
 		return fmt.Errorf("failed to set key ownership: %w", err)
 	}
-
-	chmodCmd := exec.Command("lxc", "exec", containerName, "--", "chmod", "600", authorizedKeysPath)
-	if err := chmodCmd.Run(); err != nil {
+	
+	// Set permissions
+	_, err = container.RunCommand([]string{"chmod", "600", authorizedKeysPath}, lxc.DefaultAttachOptions)
+	if err != nil {
 		return fmt.Errorf("failed to set key permissions: %w", err)
 	}
-
+	
 	return nil
 }
 
 func (m *Manager) SetupSSHPassword(containerName, username, password string) error {
-	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-c", 
-		fmt.Sprintf("echo '%s:%s' | chpasswd", username, password))
-	if err := cmd.Run(); err != nil {
+	container, err := lxc.NewContainer(containerName, lxc.DefaultConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed to get container: %w", err)
+	}
+	defer container.Release()
+	
+	_, err = container.RunCommand([]string{"bash", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", username, password)}, lxc.DefaultAttachOptions)
+	if err != nil {
 		return fmt.Errorf("failed to set password: %w", err)
 	}
-
+	
 	return nil
+}
+
+func (m *Manager) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	containerIP, err := m.getContainerIP(containerID)
+	if err != nil {
+		return fmt.Errorf("failed to get container IP: %w", err)
+	}
+	dnatCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING", 
+		"-p", protocol, "--dport", strconv.Itoa(externalPort),
+		"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerIP, internalPort))
+	if err := dnatCmd.Run(); err != nil {
+		return fmt.Errorf("failed to add DNAT rule: %w", err)
+	}
+	
+	snatCmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", 
+		"-s", containerIP, "-j", "MASQUERADE")
+	if err := snatCmd.Run(); err != nil {
+		return fmt.Errorf("failed to add SNAT rule: %w", err)
+	}
+	allowCmd := exec.Command("iptables", "-A", "INPUT", 
+		"-p", protocol, "--dport", strconv.Itoa(externalPort), "-j", "ACCEPT")
+	if err := allowCmd.Run(); err != nil {
+		return fmt.Errorf("failed to add INPUT rule: %w", err)
+	}
+	
+	return nil
+}
+
+func (m *Manager) UnmapPort(containerID string, externalPort int, protocol string) error {
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	dnatCmd := exec.Command("iptables", "-t", "nat", "-D", "PREROUTING", 
+		"-p", protocol, "--dport", strconv.Itoa(externalPort),
+		"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", containerID, externalPort))
+	dnatCmd.Run()
+	
+	allowCmd := exec.Command("iptables", "-D", "INPUT", 
+		"-p", protocol, "--dport", strconv.Itoa(externalPort), "-j", "ACCEPT")
+	allowCmd.Run()
+	
+	return nil
+}
+
+func (m *Manager) getContainerIP(containerID string) (string, error) {
+	container, err := lxc.NewContainer(containerID, lxc.DefaultConfigPath())
+	if err != nil {
+		return "", fmt.Errorf("failed to get container: %w", err)
+	}
+	defer container.Release()
+	
+	ips, err := container.IPAddresses()
+	if err != nil {
+		return "", fmt.Errorf("failed to get container IP addresses: %w", err)
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("container %s has no IP address", containerID)
+	}
+	
+	for _, addr := range ips {
+		if strings.Contains(addr, ".") { 
+			return addr, nil
+		}
+	}
+	
+	return "", fmt.Errorf("container %s has no IPv4 address", containerID)
+}
+
+func (m *Manager) GetRandomPort() (int, error) {
+	minPort := 20000
+	maxPort := 65535
+	
+	port := minPort + int(time.Now().UnixNano() % int64(maxPort-minPort))
+	return port, nil
 }

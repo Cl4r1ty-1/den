@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>den - subdomains</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        .nav-links a:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .page-header {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .page-header h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        
+        .page-header p {
+            color: #666;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+        
+        .card {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+        }
+        
+        .subdomain-list {
+            margin-top: 1.5rem;
+        }
+        
+        .subdomain-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            background: #fafbfc;
+        }
+        
+        .subdomain-info {
+            flex: 1;
+        }
+        
+        .subdomain-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.25rem;
+        }
+        
+        .subdomain-details {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .subdomain-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">den</div>
+        <nav class="nav-links">
+            <a href="/user/dashboard">dashboard</a>
+            <a href="/user/container">container</a>
+            <a href="/user/subdomains">subdomains</a>
+            <a href="/user/ssh-setup">ssh setup</a>
+            <a href="/logout">logout</a>
+        </nav>
+    </div>
+    
+    <div class="container">
+        <div class="page-header">
+            <h1>Subdomain Management</h1>
+            <p>Create and manage custom subdomains for your applications</p>
+        </div>
+        
+        <div id="alerts"></div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>➕ Create New Subdomain</h2>
+                <form id="subdomain-form">
+                    <div class="form-group">
+                        <label for="subdomain">Subdomain Name</label>
+                        <input type="text" id="subdomain" name="subdomain" placeholder="myapp" required>
+                        <small style="color: #666;">Your subdomain will be: <span id="full-domain">subdomain.hack.kim</span></small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="target-port">Target Port</label>
+                        <input type="number" id="target-port" name="target_port" placeholder="8080" min="1024" max="65535" required>
+                        <small style="color: #666;">The port your application is running on inside the container</small>
+                    </div>
+                    
+                    <button type="submit" class="btn">Create Subdomain</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>📋 Your Subdomains</h2>
+                <div id="subdomain-list" class="subdomain-list">
+                    <p style="color: #666; text-align: center; padding: 2rem;">Loading subdomains...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update full domain preview
+        document.getElementById('subdomain').addEventListener('input', function() {
+            const subdomain = this.value;
+            document.getElementById('full-domain').textContent = subdomain ? `${subdomain}.hack.kim` : 'subdomain.hack.kim';
+        });
+        
+        // Load subdomains
+        async function loadSubdomains() {
+            try {
+                const response = await fetch('/user/subdomains');
+                const data = await response.json();
+                
+                const listElement = document.getElementById('subdomain-list');
+                if (data.subdomains && data.subdomains.length > 0) {
+                    listElement.innerHTML = data.subdomains.map(subdomain => `
+                        <div class="subdomain-item">
+                            <div class="subdomain-info">
+                                <div class="subdomain-name">${subdomain.subdomain}.hack.kim</div>
+                                <div class="subdomain-details">
+                                    Port: ${subdomain.target_port} | 
+                                    Status: ${subdomain.is_active ? 'Active' : 'Inactive'} | 
+                                    Created: ${new Date(subdomain.created_at).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <div class="subdomain-actions">
+                                <button class="btn btn-danger btn-small" onclick="deleteSubdomain(${subdomain.id})">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listElement.innerHTML = '<p style="color: #666; text-align: center; padding: 2rem;">No subdomains created yet</p>';
+                }
+            } catch (error) {
+                console.error('Failed to load subdomains:', error);
+                document.getElementById('subdomain-list').innerHTML = '<p style="color: #ff6b6b; text-align: center; padding: 2rem;">Failed to load subdomains</p>';
+            }
+        }
+        
+        // Create subdomain
+        document.getElementById('subdomain-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const form = this;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            
+            // Show loading state
+            form.classList.add('loading');
+            submitBtn.textContent = 'Creating...';
+            
+            try {
+                const formData = new FormData(form);
+                const data = {
+                    subdomain: formData.get('subdomain'),
+                    target_port: parseInt(formData.get('target_port'))
+                };
+                
+                const response = await fetch('/user/subdomains', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Subdomain created successfully!', 'success');
+                    form.reset();
+                    document.getElementById('full-domain').textContent = 'subdomain.hack.kim';
+                    loadSubdomains();
+                } else {
+                    showAlert(result.error || 'Failed to create subdomain', 'error');
+                }
+            } catch (error) {
+                console.error('Error creating subdomain:', error);
+                showAlert('Failed to create subdomain', 'error');
+            } finally {
+                form.classList.remove('loading');
+                submitBtn.textContent = originalText;
+            }
+        });
+        
+        // Delete subdomain
+        async function deleteSubdomain(id) {
+            if (!confirm('Are you sure you want to delete this subdomain?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/user/subdomains/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('Subdomain deleted successfully!', 'success');
+                    loadSubdomains();
+                } else {
+                    showAlert(result.error || 'Failed to delete subdomain', 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting subdomain:', error);
+                showAlert('Failed to delete subdomain', 'error');
+            }
+        }
+        
+        // Show alerts
+        function showAlert(message, type) {
+            const alertsContainer = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            alertsContainer.appendChild(alert);
+            
+            // Remove alert after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        // Load subdomains on page load
+        loadSubdomains();
+    </script>
+</body>
+</html> 
