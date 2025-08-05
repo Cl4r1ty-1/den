@@ -236,9 +236,21 @@ func (g *Gateway) handleNoContainer(sshConn *ssh.ServerConn, chans <-chan ssh.Ne
 func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, nodeHostname, containerID, username string) {
 	log.Printf("Routing SSH connection for user %s to container %s on node %s", username, containerID, nodeHostname)
 	
+	masterKeyBytes, err := os.ReadFile("/root/.ssh/den_master_key")
+	if err != nil {
+		log.Printf("failed to read master key: %v", err)
+		return
+	}
+	
+	masterKey, err := ssh.ParsePrivateKey(masterKeyBytes)
+	if err != nil {
+		log.Printf("failed to parse master key: %v", err)
+		return
+	}
+
 	nodeConn, err := ssh.Dial("tcp", nodeHostname+":22", &ssh.ClientConfig{
 		User:            "root",
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(g.hostKey)},
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(masterKey)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	})
 	if err != nil {
