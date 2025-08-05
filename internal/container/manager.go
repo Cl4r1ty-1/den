@@ -1,3 +1,6 @@
+//go:build slave
+// +build slave
+
 package container
 
 import (

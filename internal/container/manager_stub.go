@@ -1,0 +1,66 @@
+//go:build !slave
+// +build !slave
+
+package container
+
+import (
+	"fmt"
+)
+
+type Manager struct {
+	defaultMemoryMB  int
+	defaultCPUCores  int
+	defaultStorageGB int
+}
+
+type ContainerInfo struct {
+	ID       string
+	Name     string
+	Status   string
+	IP       string
+	SSHPort  int
+}
+
+func NewManager() (*Manager, error) {
+	return &Manager{
+		defaultMemoryMB:  4096,
+		defaultCPUCores:  4,
+		defaultStorageGB: 15,
+	}, nil
+}
+
+func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, error) {
+	return nil, fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
+	return nil, fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) GetContainerStatus(containerID string) (string, error) {
+	return "", fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) DeleteContainer(containerID string) error {
+	return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) error {
+	return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) SetupSSHPassword(containerName, username, password string) error {
+	return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
+	return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) UnmapPort(containerID string, externalPort int, protocol string) error {
+	return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) GetRandomPort() (int, error) {
+	return 0, fmt.Errorf("container operations not supported on master node")
+}
