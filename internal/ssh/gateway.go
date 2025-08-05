@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -235,7 +236,6 @@ func (g *Gateway) handleNoContainer(sshConn *ssh.ServerConn, chans <-chan ssh.Ne
 
 func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, nodeHostname, containerID, username string) {
 	log.Printf("Routing SSH connection for user %s to container %s on node %s", username, containerID, nodeHostname)
-	
 	masterKeyBytes, err := os.ReadFile("/root/.ssh/den_master_key")
 	if err != nil {
 		log.Printf("failed to read master key: %v", err)
@@ -247,7 +247,6 @@ func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChann
 		log.Printf("failed to parse master key: %v", err)
 		return
 	}
-
 	nodeConn, err := ssh.Dial("tcp", nodeHostname+":22", &ssh.ClientConfig{
 		User:            "root",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(masterKey)},
@@ -283,8 +282,87 @@ func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChann
 			continue
 		}
 
-		go g.handleContainerSession(nodeConn, channel, channelReqs, containerID, username)
+		go g.handleLXCSession(nodeConn, channel, channelReqs, containerID, username)
 	}
+}
+
+func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, reqs <-chan *ssh.Request, containerID, username string) {
+	defer channel.Close()
+	
+	session, err := nodeConn.NewSession()
+	if err != nil {
+		log.Printf("failed to create session on node: %v", err)
+		return
+	}
+	defer session.Close()
+	session.Stdout = channel
+	session.Stderr = channel
+	session.Stdin = channel
+
+	var shellStarted bool
+
+	for req := range reqs {
+		switch req.Type {
+		case "pty-req":
+			err := session.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+			if req.WantReply {
+				req.Reply(err == nil, nil)
+			}
+		case "shell":
+			if !shellStarted {
+				shellStarted = true
+				cmd := fmt.Sprintf("lxc exec %s -- sudo -u %s -i", containerID, username)
+				log.Printf("starting container shell: %s", cmd)
+				
+				go func() {
+					err := session.Run(cmd)
+					if err != nil {
+						log.Printf("container shell execution failed: %v", err)
+					}
+				}()
+				
+				if req.WantReply {
+					req.Reply(true, nil)
+				}
+			} else {
+				if req.WantReply {
+					req.Reply(false, nil)
+				}
+			}
+		case "window-change":
+			if req.WantReply {
+				req.Reply(true, nil)
+			}
+		default:
+			if req.WantReply {
+				req.Reply(false, nil)
+			}
+		}
+	}
+}
+
+func (g *Gateway) forwardRequests(from <-chan *ssh.Request, to ssh.Channel) {
+	for req := range from {
+		ok, err := to.SendRequest(req.Type, req.WantReply, req.Payload)
+		if req.WantReply {
+			req.Reply(ok, nil)
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (g *Gateway) forwardData(from ssh.Channel, to ssh.Channel) {
+	defer from.Close()
+	defer to.Close()
+	go func() {
+		defer to.CloseWrite()
+		io.Copy(to, from)
+	}()
+	
+	defer from.CloseWrite()
+	io.Copy(from, to)
 }
 
 func (g *Gateway) handleContainerSession(nodeConn *ssh.Client, channel ssh.Channel, reqs <-chan *ssh.Request, containerID, username string) {
