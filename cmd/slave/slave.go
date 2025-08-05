@@ -353,10 +353,13 @@ func (s *Slave) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
 	
 	var err error
 	if req.PublicKey != "" {
+		log.Printf("setting up ssh key access for user %s in container %s", req.Username, req.ContainerID)
 		err = s.manager.SetupSSHAccess(req.ContainerID, req.Username, req.PublicKey)
 	} else if req.Password != "" {
+		log.Printf("setting up ssh password access for user %s in container %s", req.Username, req.ContainerID)
 		err = s.manager.SetupSSHPassword(req.ContainerID, req.Username, req.Password)
 	} else {
+		log.Printf("ssh setup request missing both public key and password")
 		http.Error(w, "either public_key or password must be provided", http.StatusBadRequest)
 		return
 	}

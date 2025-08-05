@@ -248,6 +248,20 @@ func (m *Manager) SetupSSHPassword(containerName, username, password string) err
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to set password: %w", err)
 	}
+	
+	sshConfigCommands := [][]string{
+		{"lxc", "exec", containerName, "--", "sed", "-i", "s/#PasswordAuthentication yes/PasswordAuthentication yes/g", "/etc/ssh/sshd_config"},
+		{"lxc", "exec", containerName, "--", "sed", "-i", "s/PasswordAuthentication no/PasswordAuthentication yes/g", "/etc/ssh/sshd_config"},
+		{"lxc", "exec", containerName, "--", "sed", "-i", "s/#PubkeyAuthentication yes/PubkeyAuthentication yes/g", "/etc/ssh/sshd_config"},
+		{"lxc", "exec", containerName, "--", "systemctl", "restart", "ssh"},
+	}
+	
+	for _, cmd := range sshConfigCommands {
+		execCmd := exec.Command(cmd[0], cmd[1:]...)
+		if err := execCmd.Run(); err != nil {
+			return fmt.Errorf("failed to configure SSH: %w", err)
+		}
+	}
 
 	return nil
 }

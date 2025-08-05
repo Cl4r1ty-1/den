@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/den/internal/database"
 	"golang.org/x/crypto/ssh"
@@ -225,16 +223,18 @@ func (g *Gateway) handleNoContainer(sshConn *ssh.ServerConn, chans <-chan ssh.Ne
 }
 
 func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, nodeHostname, containerID, username string) {
-	targetConn, err := ssh.Dial("tcp", nodeHostname+":22", &ssh.ClientConfig{
-		User:            username,
+	log.Printf("Routing SSH connection for user %s to container %s on node %s", username, containerID, nodeHostname)
+	
+	nodeConn, err := ssh.Dial("tcp", nodeHostname+":22", &ssh.ClientConfig{
+		User:            "root",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(g.hostKey)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // i'll probably verify keys later on
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	})
 	if err != nil {
 		log.Printf("failed to connect to node %s: %v", nodeHostname, err)
 		return
 	}
-	defer targetConn.Close()
+	defer nodeConn.Close()
 	go func() {
 		for req := range reqs {
 			if req.Type == "keepalive@openssh.com" {
@@ -243,67 +243,69 @@ func (g *Gateway) routeToNode(sshConn *ssh.ServerConn, chans <-chan ssh.NewChann
 				}
 				continue
 			}
-			ok, payload, err := targetConn.SendRequest(req.Type, req.WantReply, req.Payload)
 			if req.WantReply {
-				req.Reply(ok, payload)
-			}
-			if err != nil {
-				log.Printf("request forwarding error: %v", err)
-				return
+				req.Reply(true, nil)
 			}
 		}
 	}()
 	for newChannel := range chans {
-		targetChannel, targetReqs, err := targetConn.OpenChannel(newChannel.ChannelType(), newChannel.ExtraData())
-		if err != nil {
-			newChannel.Reject(ssh.ConnectionFailed, err.Error())
+		if newChannel.ChannelType() != "session" {
+			newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type")
 			continue
 		}
 
 		channel, channelReqs, err := newChannel.Accept()
 		if err != nil {
-			targetChannel.Close()
+			log.Printf("failed to accept channel: %v", err)
 			continue
 		}
-		go func() {
-			for req := range channelReqs {
-				ok, err := targetChannel.SendRequest(req.Type, req.WantReply, req.Payload)
-				if req.WantReply {
-					req.Reply(ok, nil)
-				}
-				if err != nil {
-					return
-				}
-			}
-		}()
 
-		go func() {
-			for req := range targetReqs {
-				ok, err := channel.SendRequest(req.Type, req.WantReply, req.Payload)
-				if req.WantReply {
-					req.Reply(ok, nil)
-				}
-				if err != nil {
-					return
-				}
-			}
-		}()
-		go func() {
-			defer channel.Close()
-			defer targetChannel.Close()
-			go func() {
-				defer targetChannel.CloseWrite()
-				_, err := io.Copy(targetChannel, channel)
-				if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-					log.Printf("errror copying from client to target: %v", err)
-				}
-			}()
-			
-			defer channel.CloseWrite()
-			_, err := io.Copy(channel, targetChannel)
-			if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-				log.Printf("error copying from target to client: %v", err)
-			}
-		}()
+		go g.handleContainerSession(nodeConn, channel, channelReqs, containerID, username)
 	}
+}
+
+func (g *Gateway) handleContainerSession(nodeConn *ssh.Client, channel ssh.Channel, reqs <-chan *ssh.Request, containerID, username string) {
+	defer channel.Close()
+	session, err := nodeConn.NewSession()
+	if err != nil {
+		log.Printf("failed to create session on node: %v", err)
+		return
+	}
+	defer session.Close()
+
+	session.Stdout = channel
+	session.Stderr = channel
+	session.Stdin = channel
+
+	go func() {
+		for req := range reqs {
+			switch req.Type {
+			case "pty-req":
+				session.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+				if req.WantReply {
+					req.Reply(true, nil)
+				}
+			case "shell":
+				go func() {
+					cmd := fmt.Sprintf("lxc exec %s -- su - %s", containerID, username)
+					err := session.Run(cmd)
+					if err != nil {
+						log.Printf("container shell execution failed: %v", err)
+					}
+				}()
+				if req.WantReply {
+					req.Reply(true, nil)
+				}
+			case "exec":
+				if req.WantReply {
+					req.Reply(true, nil)
+				}
+			default:
+				if req.WantReply {
+					req.Reply(false, nil)
+				}
+			}
+		}
+	}()
+	session.Wait()
 }
