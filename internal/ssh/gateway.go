@@ -134,6 +134,8 @@ func (g *Gateway) authenticateUser(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 
 func (g *Gateway) authenticatePassword(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 	username := conn.User()
+	log.Printf("ssh password auth attempt for user: %s", username)
+	
 	var userID int
 	var containerID sql.NullString
 	var nodeHostname sql.NullString
@@ -148,18 +150,26 @@ func (g *Gateway) authenticatePassword(conn ssh.ConnMetadata, password []byte) (
 	`, username).Scan(&userID, &containerID, &hashedPassword, &nodeHostname)
 
 	if err != nil {
-		log.Printf("User %s not found: %v", username, err)
+		log.Printf("database lookup failed for user %s: %v", username, err)
 		return nil, fmt.Errorf("user not found")
 	}
 
+	log.Printf("user %s found - ID: %d, container: %s, Node: %s, hasPassword: %v", 
+		username, userID, containerID.String, nodeHostname.String, hashedPassword.Valid)
+
 	if !hashedPassword.Valid {
+		log.Printf("no password configured for user %s", username)
 		return nil, fmt.Errorf("no password configured")
 	}
 
-// imagine having security lol :3
+	// imagine having security lol :3
 	if string(password) != hashedPassword.String {
+		log.Printf("password mismatch for user %s (provided: %s, stored: %s)", 
+			username, string(password), hashedPassword.String)
 		return nil, fmt.Errorf("password mismatch")
 	}
+	
+	log.Printf("password authentication successful for user %s", username)
 	permissions := &ssh.Permissions{
 		Extensions: map[string]string{
 			"user_id":       fmt.Sprintf("%d", userID),
