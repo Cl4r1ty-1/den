@@ -300,53 +300,64 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 	session.Stdin = channel
 
 	var shellStarted bool
+	sessionDone := make(chan bool)
 
-	for req := range reqs {
-		switch req.Type {
-		case "pty-req":
-			err := session.RequestPty("xterm-256color", 120, 30, ssh.TerminalModes{
-				ssh.ECHO:          1,
-				ssh.TTY_OP_ISPEED: 14400,
-				ssh.TTY_OP_OSPEED: 14400,
-			})
-			if req.WantReply {
-				req.Reply(err == nil, nil)
-			}
-		case "shell":
-			if !shellStarted {
-				shellStarted = true
-				cmd := fmt.Sprintf("lxc exec %s -- sudo -u %s -i", containerID, username)
-				log.Printf("starting container shell: %s", cmd)
-				
-				go func() {
-					err := session.Run(cmd)
-					if err != nil {
-						log.Printf("container shell execution failed: %v", err)
-					}
-				}()
-				
+
+	// go routines wooooo!!!
+	go func() {
+		for req := range reqs {
+			switch req.Type {
+			case "pty-req":
+				err := session.RequestPty("xterm-256color", 120, 30, ssh.TerminalModes{
+					ssh.ECHO:          1,
+					ssh.TTY_OP_ISPEED: 14400,
+					ssh.TTY_OP_OSPEED: 14400,
+				})
 				if req.WantReply {
-					req.Reply(true, nil)
+					req.Reply(err == nil, nil)
 				}
-			} else {
+			case "shell":
+				if !shellStarted {
+					shellStarted = true
+					cmd := fmt.Sprintf("lxc exec %s -- sudo -u %s -i", containerID, username)
+					log.Printf("starting container shell: %s", cmd)
+					
+					go func() {
+						err := session.Run(cmd)
+						if err != nil {
+							log.Printf("container shell execution failed: %v", err)
+						}
+						// yeet that shit outta here
+						log.Printf("container shell exited, closing ssh connection")
+						sessionDone <- true
+					}()
+					
+					if req.WantReply {
+						req.Reply(true, nil)
+					}
+				} else {
+					if req.WantReply {
+						req.Reply(false, nil)
+					}
+				}
+			case "window-change":
+				ok, err := session.SendRequest(req.Type, req.WantReply, req.Payload)
+				if req.WantReply {
+					req.Reply(ok, nil)
+				}
+				if err != nil {
+					log.Printf("failed to forward window-change: %v", err)
+				}
+			default:
 				if req.WantReply {
 					req.Reply(false, nil)
 				}
 			}
-		case "window-change":
-			ok, err := session.SendRequest(req.Type, req.WantReply, req.Payload)
-			if req.WantReply {
-				req.Reply(ok, nil)
-			}
-			if err != nil {
-				log.Printf("failed to forward window-change: %v", err)
-			}
-		default:
-			if req.WantReply {
-				req.Reply(false, nil)
-			}
 		}
-	}
+	}()
+
+	// wait :thumbsup:
+	<-sessionDone
 }
 
 func (g *Gateway) forwardRequests(from <-chan *ssh.Request, to ssh.Channel) {
