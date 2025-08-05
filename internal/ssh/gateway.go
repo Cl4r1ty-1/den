@@ -309,11 +309,11 @@ func (g *Gateway) handleContainerSession(nodeConn *ssh.Client, channel ssh.Chann
 					req.Reply(true, nil)
 				}
 			case "shell":
+				cmd := fmt.Sprintf("lxc exec %s -- su - %s", containerID, username)
 				go func() {
-					cmd := fmt.Sprintf("lxc exec %s -- su - %s", containerID, username)
-					err := session.Run(cmd)
+					err := session.Start(cmd)
 					if err != nil {
-						log.Printf("container shell execution failed: %v", err)
+						log.Printf("container shell start failed: %v", err)
 					}
 				}()
 				if req.WantReply {
