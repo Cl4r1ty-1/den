@@ -252,6 +252,8 @@ func (m *Manager) SetupSSHPassword(containerName, username, password string) err
 	sshConfigCommands := [][]string{
 		{"lxc", "exec", containerName, "--", "sed", "-i", "s/#PasswordAuthentication yes/PasswordAuthentication yes/g", "/etc/ssh/sshd_config"},
 		{"lxc", "exec", containerName, "--", "sed", "-i", "s/PasswordAuthentication no/PasswordAuthentication yes/g", "/etc/ssh/sshd_config"},
+		{"lxc", "exec", containerName, "--", "sed", "-i", "s/PasswordAuthentication no/PasswordAuthentication yes/g", "/etc/ssh/sshd_config.d/60-cloudimg-settings.conf"},
+		{"lxc", "exec", containerName, "--", "sed", "-i", "s/KbdInteractiveAuthentication no/KbdInteractiveAuthentication yes/g", "/etc/ssh/sshd_config"},
 		{"lxc", "exec", containerName, "--", "sed", "-i", "s/#PubkeyAuthentication yes/PubkeyAuthentication yes/g", "/etc/ssh/sshd_config"},
 		{"lxc", "exec", containerName, "--", "systemctl", "restart", "ssh"},
 	}
