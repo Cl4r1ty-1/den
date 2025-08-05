@@ -103,9 +103,11 @@ func (m *Manager) setupUserInContainer(containerName, username string) error {
 		{"lxc", "exec", containerName, "--", "chown", fmt.Sprintf("%s:%s", username, username), fmt.Sprintf("/home/%s/.ssh", username)},
 		{"lxc", "exec", containerName, "--", "chmod", "700", fmt.Sprintf("/home/%s/.ssh", username)},
 		{"lxc", "exec", containerName, "--", "apt-get", "update"},
-		{"lxc", "exec", containerName, "--", "apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop"},
+		{"lxc", "exec", containerName, "--", "apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop", "nano"},
 		{"lxc", "exec", containerName, "--", "systemctl", "enable", "ssh"},
 		{"lxc", "exec", containerName, "--", "systemctl", "start", "ssh"},
+		{"lxc", "exec", containerName, "--", "bash", "-c", fmt.Sprintf("echo '%s ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/%s", username, username)},
+		{"lxc", "exec", containerName, "--", "chmod", "440", fmt.Sprintf("/etc/sudoers.d/%s", username)},
 	}
 
 	for _, cmd := range commands {

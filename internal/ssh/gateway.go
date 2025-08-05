@@ -304,7 +304,11 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 	for req := range reqs {
 		switch req.Type {
 		case "pty-req":
-			err := session.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+			err := session.RequestPty("xterm-256color", 120, 30, ssh.TerminalModes{
+				ssh.ECHO:          1,
+				ssh.TTY_OP_ISPEED: 14400,
+				ssh.TTY_OP_OSPEED: 14400,
+			})
 			if req.WantReply {
 				req.Reply(err == nil, nil)
 			}
@@ -330,8 +334,12 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 				}
 			}
 		case "window-change":
+			ok, err := session.SendRequest(req.Type, req.WantReply, req.Payload)
 			if req.WantReply {
-				req.Reply(true, nil)
+				req.Reply(ok, nil)
+			}
+			if err != nil {
+				log.Printf("failed to forward window-change: %v", err)
 			}
 		default:
 			if req.WantReply {
