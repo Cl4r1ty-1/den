@@ -1,3 +1,5 @@
 temp/
 .env
 den
+den_master
+den_slave

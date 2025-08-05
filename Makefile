@@ -11,7 +11,7 @@ build-slave:
 build-all: build-master build-slave
 
 clean:
-	rm -f den-master den-slave
+	rm -f den_master den_slave
 
 test-master:
 	go test ./... -tags ""

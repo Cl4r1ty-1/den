@@ -112,12 +112,18 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	}
 
 	apiGroup := r.Group("/api")
-	apiGroup.Use(h.RequireNodeAuth())
 	{
-		apiGroup.POST("/containers", h.APICreateContainer)
-		apiGroup.GET("/containers/:id", h.APIGetContainer)
-		apiGroup.DELETE("/containers/:id", h.APIDeleteContainer)
-		apiGroup.POST("/containers/:id/status", h.APIUpdateContainerStatus)
+		apiGroup.POST("/nodes/register", h.APIRegisterNode)
+		apiGroup.POST("/nodes/heartbeat", h.APINodeHeartbeat)
+	}
+	
+	apiProtected := r.Group("/api")
+	apiProtected.Use(h.RequireNodeAuth())
+	{
+		apiProtected.POST("/containers", h.APICreateContainer)
+		apiProtected.GET("/containers/:id", h.APIGetContainer)
+		apiProtected.DELETE("/containers/:id", h.APIDeleteContainer)
+		apiProtected.POST("/containers/:id/status", h.APIUpdateContainerStatus)
 	}
 
 	return r

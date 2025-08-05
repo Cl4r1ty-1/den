@@ -771,3 +771,66 @@ func generateNodeToken() string {
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
+
+func (h *Handler) APIRegisterNode(c *gin.Context) {
+	var req struct {
+		NodeID       string `json:"node_id" binding:"required"`
+		NodeToken    string `json:"node_token" binding:"required"`
+		MaxMemoryMB  int    `json:"max_memory_mb"`
+		MaxCPUCores  int    `json:"max_cpu_cores"`
+		MaxStorageGB int    `json:"max_storage_gb"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var nodeID int
+	err := h.db.QueryRow("SELECT id FROM nodes WHERE token = $1", req.NodeToken).Scan(&nodeID)
+	if err == nil {
+		_, err = h.db.Exec(`
+			UPDATE nodes SET is_online = true, last_seen = NOW(), updated_at = NOW() 
+			WHERE id = $1
+		`, nodeID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update node"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "node registered successfully"})
+		return
+	}
+	_, err = h.db.Exec(`
+		INSERT INTO nodes (name, hostname, token, max_memory_mb, max_cpu_cores, max_storage_gb, is_online, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, true, NOW())
+	`, req.NodeID, req.NodeID, req.NodeToken, req.MaxMemoryMB, req.MaxCPUCores, req.MaxStorageGB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register node"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "node registered successfully"})
+}
+
+func (h *Handler) APINodeHeartbeat(c *gin.Context) {
+	var req struct {
+		NodeID     string      `json:"node_id" binding:"required"`
+		NodeToken  string      `json:"node_token" binding:"required"`
+		Containers interface{} `json:"containers"`
+		Timestamp  int64       `json:"timestamp"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	_, err := h.db.Exec(`
+		UPDATE nodes SET is_online = true, last_seen = NOW(), updated_at = NOW() 
+		WHERE token = $1
+	`, req.NodeToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid node token"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "heartbeat received"})
+}
