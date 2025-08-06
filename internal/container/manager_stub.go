@@ -11,6 +11,7 @@ type Manager struct {
 	defaultMemoryMB  int
 	defaultCPUCores  int
 	defaultStorageGB int
+	publicHostname   string
 }
 
 type ContainerInfo struct {
@@ -21,11 +22,12 @@ type ContainerInfo struct {
 	SSHPort  int
 }
 
-func NewManager() (*Manager, error) {
+func NewManager(publicHostname string) (*Manager, error) {
 	return &Manager{
 		defaultMemoryMB:  4096,
 		defaultCPUCores:  4,
 		defaultStorageGB: 15,
+		publicHostname:   publicHostname,
 	}, nil
 }
 
