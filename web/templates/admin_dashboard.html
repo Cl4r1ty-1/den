@@ -286,6 +286,7 @@
                         <tr>
                             <th>name</th>
                             <th>hostname</th>
+                            <th>public hostname</th>
                             <th>resources</th>
                             <th>status</th>
                             <th>last seen</th>
@@ -331,8 +332,13 @@
             </div>
             
             <div class="form-group">
-                <label for="node-hostname">hostname:</label>
+                <label for="node-hostname">internal hostname:</label>
                 <input type="text" id="node-hostname" placeholder="192.168.1.100">
+            </div>
+            
+            <div class="form-group">
+                <label for="node-public-hostname">public hostname (optional):</label>
+                <input type="text" id="node-public-hostname" placeholder="node1.hack.kim">
             </div>
             
             <div class="form-group">
@@ -395,6 +401,7 @@
                             row.innerHTML = `
                                 <td>${node.name}</td>
                                 <td>${node.hostname}</td>
+                                <td>${node.public_hostname || 'none'}</td>
                                 <td>${node.max_memory_mb}mb / ${node.max_cpu_cores} cores / ${node.max_storage_gb}gb</td>
                                 <td><span class="status ${node.is_online ? 'online' : 'offline'}">${node.is_online ? 'online' : 'offline'}</span></td>
                                 <td>${node.last_seen ? new Date(node.last_seen).toLocaleString() : 'never'}</td>
@@ -445,6 +452,7 @@
         function addNode() {
             const name = document.getElementById('node-name').value;
             const hostname = document.getElementById('node-hostname').value;
+            const publicHostname = document.getElementById('node-public-hostname').value;
             const memory = parseInt(document.getElementById('node-memory').value);
             const cpu = parseInt(document.getElementById('node-cpu').value);
             const storage = parseInt(document.getElementById('node-storage').value);
@@ -454,18 +462,24 @@
                 return;
             }
             
+            const payload = {
+                name: name,
+                hostname: hostname,
+                max_memory_mb: memory,
+                max_cpu_cores: cpu,
+                max_storage_gb: storage
+            };
+            
+            if (publicHostname.trim()) {
+                payload.public_hostname = publicHostname;
+            }
+            
             fetch('/admin/nodes', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    name: name,
-                    hostname: hostname,
-                    max_memory_mb: memory,
-                    max_cpu_cores: cpu,
-                    max_storage_gb: storage
-                })
+                body: JSON.stringify(payload)
             })
             .then(response => response.json())
             .then(data => {
@@ -478,6 +492,7 @@
                     
                     document.getElementById('node-name').value = '';
                     document.getElementById('node-hostname').value = '';
+                    document.getElementById('node-public-hostname').value = '';
                     document.getElementById('node-memory').value = '4096';
                     document.getElementById('node-cpu').value = '4';
                     document.getElementById('node-storage').value = '15';

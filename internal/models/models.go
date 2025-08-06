@@ -19,17 +19,18 @@ type User struct {
 }
 
 type Node struct {
-	ID           int       `json:"id" db:"id"`
-	Name         string    `json:"name" db:"name"`
-	Hostname     string    `json:"hostname" db:"hostname"`
-	Token        string    `json:"token" db:"token"`
-	MaxMemoryMB  int       `json:"max_memory_mb" db:"max_memory_mb"`
-	MaxCPUCores  int       `json:"max_cpu_cores" db:"max_cpu_cores"`
-	MaxStorageGB int       `json:"max_storage_gb" db:"max_storage_gb"`
-	IsOnline     bool      `json:"is_online" db:"is_online"`
-	LastSeen     *time.Time `json:"last_seen" db:"last_seen"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID             int       `json:"id" db:"id"`
+	Name           string    `json:"name" db:"name"`
+	Hostname       string    `json:"hostname" db:"hostname"`
+	PublicHostname *string   `json:"public_hostname" db:"public_hostname"`
+	Token          string    `json:"token" db:"token"`
+	MaxMemoryMB    int       `json:"max_memory_mb" db:"max_memory_mb"`
+	MaxCPUCores    int       `json:"max_cpu_cores" db:"max_cpu_cores"`
+	MaxStorageGB   int       `json:"max_storage_gb" db:"max_storage_gb"`
+	IsOnline       bool      `json:"is_online" db:"is_online"`
+	LastSeen       *time.Time `json:"last_seen" db:"last_seen"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type Container struct {

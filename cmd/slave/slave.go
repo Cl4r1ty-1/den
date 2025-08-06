@@ -18,12 +18,13 @@ import (
 )
 
 type Config struct {
-	MasterURL   string `json:"master_url"`
-	NodeToken   string `json:"node_token"`
-	NodeID      string `json:"node_id"`
-	MaxMemoryMB int    `json:"max_memory_mb"`
-	MaxCPUCores int    `json:"max_cpu_cores"`
-	MaxStorage  int    `json:"max_storage_gb"`
+	MasterURL      string `json:"master_url"`
+	NodeToken      string `json:"node_token"`
+	NodeID         string `json:"node_id"`
+	PublicHostname string `json:"public_hostname"`
+	MaxMemoryMB    int    `json:"max_memory_mb"`
+	MaxCPUCores    int    `json:"max_cpu_cores"`
+	MaxStorage     int    `json:"max_storage_gb"`
 }
 
 type Slave struct {
@@ -42,7 +43,7 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	manager, err := container.NewManager()
+	manager, err := container.NewManager(config.PublicHostname)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container manager: %w", err)
 	}

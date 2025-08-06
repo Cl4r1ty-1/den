@@ -472,7 +472,7 @@ func (h *Handler) AdminDashboard(c *gin.Context) {
 
 func (h *Handler) NodeManagement(c *gin.Context) {
 	rows, err := h.db.Query(`
-		SELECT id, name, hostname, max_memory_mb, max_cpu_cores, max_storage_gb,
+		SELECT id, name, hostname, public_hostname, max_memory_mb, max_cpu_cores, max_storage_gb,
 			   is_online, last_seen, created_at
 		FROM nodes ORDER BY created_at DESC
 	`)
@@ -485,7 +485,7 @@ func (h *Handler) NodeManagement(c *gin.Context) {
 	var nodes []models.Node
 	for rows.Next() {
 		var node models.Node
-		err := rows.Scan(&node.ID, &node.Name, &node.Hostname, &node.MaxMemoryMB,
+		err := rows.Scan(&node.ID, &node.Name, &node.Hostname, &node.PublicHostname, &node.MaxMemoryMB,
 			&node.MaxCPUCores, &node.MaxStorageGB, &node.IsOnline, &node.LastSeen, &node.CreatedAt)
 		if err != nil {
 			continue
@@ -498,11 +498,12 @@ func (h *Handler) NodeManagement(c *gin.Context) {
 
 func (h *Handler) CreateNode(c *gin.Context) {
 	var req struct {
-		Name         string `json:"name" binding:"required"`
-		Hostname     string `json:"hostname" binding:"required"`
-		MaxMemoryMB  int    `json:"max_memory_mb"`
-		MaxCPUCores  int    `json:"max_cpu_cores"`
-		MaxStorageGB int    `json:"max_storage_gb"`
+		Name           string  `json:"name" binding:"required"`
+		Hostname       string  `json:"hostname" binding:"required"`
+		PublicHostname *string `json:"public_hostname"`
+		MaxMemoryMB    int     `json:"max_memory_mb"`
+		MaxCPUCores    int     `json:"max_cpu_cores"`
+		MaxStorageGB   int     `json:"max_storage_gb"`
 	}
 	
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -521,10 +522,10 @@ func (h *Handler) CreateNode(c *gin.Context) {
 	token := generateNodeToken()
 	var nodeID int
 	err := h.db.QueryRow(`
-		INSERT INTO nodes (name, hostname, token, max_memory_mb, max_cpu_cores, max_storage_gb)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO nodes (name, hostname, public_hostname, token, max_memory_mb, max_cpu_cores, max_storage_gb)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, req.Name, req.Hostname, token, req.MaxMemoryMB, req.MaxCPUCores, req.MaxStorageGB).Scan(&nodeID)
+	`, req.Name, req.Hostname, req.PublicHostname, token, req.MaxMemoryMB, req.MaxCPUCores, req.MaxStorageGB).Scan(&nodeID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create node"})
 		return

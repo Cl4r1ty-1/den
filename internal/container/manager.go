@@ -16,6 +16,7 @@ type Manager struct {
 	defaultMemoryMB  int
 	defaultCPUCores  int
 	defaultStorageGB int
+	publicHostname   string
 }
 
 type ContainerInfo struct {
@@ -26,11 +27,12 @@ type ContainerInfo struct {
 	SSHPort  int
 }
 
-func NewManager() (*Manager, error) {
+func NewManager(publicHostname string) (*Manager, error) {
 	return &Manager{
 		defaultMemoryMB:  4096,
 		defaultCPUCores:  4,
 		defaultStorageGB: 15,
+		publicHostname:   publicHostname,
 	}, nil
 }
 
@@ -108,6 +110,7 @@ func (m *Manager) setupUserInContainer(containerName, username string) error {
 		{"lxc", "exec", containerName, "--", "systemctl", "start", "ssh"},
 		{"lxc", "exec", containerName, "--", "bash", "-c", fmt.Sprintf("echo '%s ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/%s", username, username)},
 		{"lxc", "exec", containerName, "--", "chmod", "440", fmt.Sprintf("/etc/sudoers.d/%s", username)},
+		{"lxc", "exec", containerName, "--", "bash", "-c", fmt.Sprintf("echo -e 'welcome to den! i hope you enjoy your stay here!\\n\\nyour container is running on: %s\\nfor direct port access, use this hostname\\n\\n~ a fuzzy little dog' > /etc/motd", m.getDisplayHostname())},
 	}
 
 	for _, cmd := range commands {
@@ -356,4 +359,14 @@ func (m *Manager) GetRandomPort() (int, error) {
 	
 	port := minPort + int(time.Now().UnixNano() % int64(maxPort-minPort))
 	return port, nil
+}
+
+func (m *Manager) getDisplayHostname() string {
+	if m.publicHostname != "" {
+		return m.publicHostname
+	}
+	if hostname, err := exec.Command("hostname", "-f").Output(); err == nil {
+		return strings.TrimSpace(string(hostname))
+	}
+	return "this node"
 }
