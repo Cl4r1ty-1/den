@@ -319,7 +319,7 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 			case "shell":
 				if !shellStarted {
 					shellStarted = true
-					cmd := fmt.Sprintf("lxc exec %s -- sudo -u %s -i", containerID, username)
+					cmd := fmt.Sprintf("lxc exec %s -- bash -c 'cat /etc/motd 2>/dev/null || true; sudo -u %s -i'", containerID, username)
 					log.Printf("starting container shell: %s", cmd)
 					
 					go func() {
