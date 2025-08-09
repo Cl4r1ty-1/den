@@ -94,6 +94,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/subdomains", h.SubdomainManagement)
 		userGroup.POST("/subdomains", h.CreateSubdomain)
 		userGroup.DELETE("/subdomains/:id", h.DeleteSubdomain)
+		userGroup.GET("/api/subdomains", h.GetUserSubdomains)
 		userGroup.GET("/ssh-setup", h.SSHSetup)
 		userGroup.POST("/ssh-setup", h.ConfigureSSH)
 	}
@@ -115,6 +116,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	{
 		apiGroup.POST("/nodes/register", h.APIRegisterNode)
 		apiGroup.POST("/nodes/heartbeat", h.APINodeHeartbeat)
+		apiGroup.GET("/traefik/config", h.TraefikConfig)
 	}
 	
 	apiProtected := r.Group("/api")

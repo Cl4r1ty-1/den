@@ -5,6 +5,8 @@ package container
 
 import (
 	"fmt"
+	"math/rand"
+	"net"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -20,11 +22,12 @@ type Manager struct {
 }
 
 type ContainerInfo struct {
-	ID       string
-	Name     string
-	Status   string
-	IP       string
-	SSHPort  int
+	ID             string
+	Name           string
+	Status         string
+	IP             string
+	SSHPort        int
+	AllocatedPorts []int
 }
 
 func NewManager(publicHostname string) (*Manager, error) {
@@ -35,9 +38,57 @@ func NewManager(publicHostname string) (*Manager, error) {
 		publicHostname:   publicHostname,
 	}, nil
 }
+func (m *Manager) allocateRandomPorts() ([]int, error) {
+	const minPort = 20000
+	const maxPort = 65535
+	const numPorts = 10
+	
+	allocatedPorts := make([]int, 0, numPorts)
+	maxAttempts := 1000
+	
+	for len(allocatedPorts) < numPorts && maxAttempts > 0 {
+		port := rand.Intn(maxPort-minPort+1) + minPort
+		if m.portInSlice(port, allocatedPorts) {
+			maxAttempts--
+			continue
+		}
+		if m.isPortAvailable(port) {
+			allocatedPorts = append(allocatedPorts, port)
+		}
+		maxAttempts--
+	}
+	
+	if len(allocatedPorts) < numPorts {
+		return nil, fmt.Errorf("could not allocate %d ports, only found %d available ports", numPorts, len(allocatedPorts))
+	}
+	
+	return allocatedPorts, nil
+}
+func (m *Manager) isPortAvailable(port int) bool {
+	addr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
+}
+func (m *Manager) portInSlice(port int, ports []int) bool {
+	for _, p := range ports {
+		if p == port {
+			return true
+		}
+	}
+	return false
+}
 
 func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, error) {
 	containerName := fmt.Sprintf("den-%s", username)
+	
+	allocatedPorts, err := m.allocateRandomPorts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate ports: %w", err)
+	}
 	
 	cmd := exec.Command("lxc", "launch", "ubuntu:22.04", containerName)
 	if err := cmd.Run(); err != nil {
@@ -58,11 +109,19 @@ func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, 
 		exec.Command("lxc", "delete", containerName, "--force").Run()
 		return nil, fmt.Errorf("failed to setup user: %w", err)
 	}
+	
+	if err := m.setupPortForwarding(containerName, allocatedPorts); err != nil {
+		exec.Command("lxc", "delete", containerName, "--force").Run()
+		return nil, fmt.Errorf("failed to setup port forwarding: %w", err)
+	}
+	
 	info, err := m.getContainerInfo(containerName)
 	if err != nil {
 		exec.Command("lxc", "delete", containerName, "--force").Run()
 		return nil, fmt.Errorf("failed to get container info: %w", err)
 	}
+	
+	info.AllocatedPorts = allocatedPorts
 	
 	return info, nil
 }
@@ -273,6 +332,14 @@ func (m *Manager) SetupSSHPassword(containerName, username, password string) err
 	return nil
 }
 
+func (m *Manager) setupPortForwarding(containerName string, allocatedPorts []int) error {
+	for _, port := range allocatedPorts {
+		if err := m.MapPort(containerName, port, port, "tcp"); err != nil {
+			return fmt.Errorf("failed to map port %d: %w", port, err)
+		}
+	}
+	return nil
+}
 func (m *Manager) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
 	if protocol == "" {
 		protocol = "tcp"

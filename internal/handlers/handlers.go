@@ -15,6 +15,7 @@ import (
 	"github.com/den/internal/dns"
 	"github.com/den/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 type Handler struct {
@@ -152,13 +153,13 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 		container = &models.Container{}
 		err := h.db.QueryRow(`
 			SELECT id, user_id, node_id, name, status, ip_address, ssh_port,
-				   memory_mb, cpu_cores, storage_gb, created_at, updated_at
+				   memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
 			FROM containers WHERE id = $1
 		`, *user.ContainerID).Scan(
 			&container.ID, &container.UserID, &container.NodeID, &container.Name,
 			&container.Status, &container.IPAddress, &container.SSHPort,
 			&container.MemoryMB, &container.CPUCores, &container.StorageGB,
-			&container.CreatedAt, &container.UpdatedAt,
+			pq.Array(&container.AllocatedPorts), &container.CreatedAt, &container.UpdatedAt,
 		)
 		if err != nil {
 			container = nil
@@ -205,11 +206,12 @@ func (h *Handler) ContainerStatus(c *gin.Context) {
 
 	var container models.Container
 	err := h.db.QueryRow(`
-		SELECT id, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb
+		SELECT id, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports
 		FROM containers WHERE id = $1
 	`, *user.ContainerID).Scan(
 		&container.ID, &container.Status, &container.IPAddress,
 		&container.SSHPort, &container.MemoryMB, &container.CPUCores, &container.StorageGB,
+		pq.Array(&container.AllocatedPorts),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
@@ -268,11 +270,22 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 		return
 	}
 	containerID := containerInfo["ID"].(string)
+	var allocatedPorts []int
+	if portsInterface, exists := containerInfo["AllocatedPorts"]; exists {
+		if portsSlice, ok := portsInterface.([]interface{}); ok {
+			for _, port := range portsSlice {
+				if portFloat, ok := port.(float64); ok {
+					allocatedPorts = append(allocatedPorts, int(portFloat))
+				}
+			}
+		}
+	}
+	
 	_, err = h.db.Exec(`
-		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb)
-		VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9)
+		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports)
+		VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9, $10)
 	`, containerID, user.ID, nodeID, containerInfo["Name"], 
-		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15)
+		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15, pq.Array(allocatedPorts))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
 		return
@@ -284,9 +297,10 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 	}
 	
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "Container created successfully",
-		"container_id": containerID,
-		"ip_address":   containerInfo["IP"],
+		"message":        "Container created successfully",
+		"container_id":   containerID,
+		"ip_address":     containerInfo["IP"],
+		"allocated_ports": allocatedPorts,
 		"ssh_port":     containerInfo["SSHPort"],
 	})
 }
@@ -683,17 +697,182 @@ func (h *Handler) APIGetContainer(c *gin.Context) {
 	
 	var container models.Container
 	err := h.db.QueryRow(`
-		SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, created_at, updated_at
+		SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
 		FROM containers WHERE id = $1
 	`, containerID).Scan(&container.ID, &container.UserID, &container.NodeID, &container.Name,
 		&container.Status, &container.IPAddress, &container.SSHPort, &container.MemoryMB,
-		&container.CPUCores, &container.StorageGB, &container.CreatedAt, &container.UpdatedAt)
+		&container.CPUCores, &container.StorageGB, pq.Array(&container.AllocatedPorts), &container.CreatedAt, &container.UpdatedAt)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
 		return
 	}
 	
 	c.JSON(http.StatusOK, container)
+}
+
+func (h *Handler) TraefikConfig(c *gin.Context) {
+	rows, err := h.db.Query(`
+		SELECT s.subdomain, s.target_port, n.public_hostname, n.hostname
+		FROM subdomains s
+		JOIN users u ON s.user_id = u.id
+		JOIN containers co ON u.container_id = co.id
+		JOIN nodes n ON co.node_id = n.id
+		WHERE s.is_active = true
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch subdomains"})
+		return
+	}
+	defer rows.Close()
+
+	config := map[string]interface{}{
+		"http": map[string]interface{}{
+			"routers":  map[string]interface{}{},
+			"services": map[string]interface{}{},
+		},
+	}
+
+	routers := config["http"].(map[string]interface{})["routers"].(map[string]interface{})
+	services := config["http"].(map[string]interface{})["services"].(map[string]interface{})
+
+	for rows.Next() {
+		var subdomain, hostname string
+		var publicHostname *string
+		var targetPort int
+		
+		if err := rows.Scan(&subdomain, &targetPort, &publicHostname, &hostname); err != nil {
+			continue
+		}
+
+		nodeHost := hostname
+		if publicHostname != nil && *publicHostname != "" {
+			nodeHost = *publicHostname
+		}
+
+		routerName := fmt.Sprintf("subdomain-%s", subdomain)
+		serviceName := fmt.Sprintf("service-%s", subdomain)
+		routers[routerName] = map[string]interface{}{
+			"rule":         fmt.Sprintf("Host(`%s`)", subdomain),
+			"service":      serviceName,
+			"entrypoints":  []string{"websecure"},
+			"tls": map[string]interface{}{
+				"certresolver": "letsencrypt",
+			},
+		}
+		services[serviceName] = map[string]interface{}{
+			"loadBalancer": map[string]interface{}{
+				"servers": []map[string]interface{}{
+					{
+						"url": fmt.Sprintf("http://%s:%d", nodeHost, targetPort),
+					},
+				},
+			},
+		}
+	}
+
+	c.JSON(http.StatusOK, config)
+}
+func (h *Handler) CreateSubdomain(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	
+	if user.ContainerID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no container found"})
+		return
+	}
+
+	var req struct {
+		Subdomain  string `json:"subdomain" binding:"required"`
+		TargetPort int    `json:"target_port" binding:"required"`
+	}
+	
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !h.dns.IsValidSubdomain(req.Subdomain) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid subdomain format"})
+		return
+	}
+	var existingID int
+	err := h.db.QueryRow("SELECT id FROM subdomains WHERE subdomain = $1", req.Subdomain).Scan(&existingID)
+	if err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "subdomain already exists"})
+		return
+	}
+	var container models.Container
+	err = h.db.QueryRow(`
+		SELECT allocated_ports FROM containers WHERE id = $1
+	`, *user.ContainerID).Scan(pq.Array(&container.AllocatedPorts))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get container ports"})
+		return
+	}
+	portFound := false
+	for _, port := range container.AllocatedPorts {
+		if port == req.TargetPort {
+			portFound = true
+			break
+		}
+	}
+	if !portFound {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "target port not allocated to your container"})
+		return
+	}
+	_, err = h.db.Exec(`
+		INSERT INTO subdomains (user_id, subdomain, target_port, is_active)
+		VALUES ($1, $2, $3, true)
+	`, user.ID, req.Subdomain, req.TargetPort)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create subdomain"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "subdomain created successfully",
+		"subdomain":   req.Subdomain,
+		"target_port": req.TargetPort,
+	})
+}
+func (h *Handler) DeleteSubdomain(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	subdomainID := c.Param("id")
+	_, err := h.db.Exec(`
+		DELETE FROM subdomains 
+		WHERE id = $1 AND user_id = $2
+	`, subdomainID, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete subdomain"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "subdomain deleted successfully"})
+}
+func (h *Handler) GetUserSubdomains(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+
+	rows, err := h.db.Query(`
+		SELECT id, subdomain, target_port, is_active, created_at
+		FROM subdomains
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch subdomains"})
+		return
+	}
+	defer rows.Close()
+
+	var subdomains []models.Subdomain
+	for rows.Next() {
+		var subdomain models.Subdomain
+		if err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort, 
+			&subdomain.IsActive, &subdomain.CreatedAt); err != nil {
+			continue
+		}
+		subdomains = append(subdomains, subdomain)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"subdomains": subdomains})
 }
 
 func (h *Handler) APIDeleteContainer(c *gin.Context) {

@@ -34,18 +34,19 @@ type Node struct {
 }
 
 type Container struct {
-	ID          string    `json:"id" db:"id"`
-	UserID      int       `json:"user_id" db:"user_id"`
-	NodeID      int       `json:"node_id" db:"node_id"`
-	Name        string    `json:"name" db:"name"`
-	Status      string    `json:"status" db:"status"`
-	IPAddress   *string   `json:"ip_address" db:"ip_address"`
-	SSHPort     int       `json:"ssh_port" db:"ssh_port"`
-	MemoryMB    int       `json:"memory_mb" db:"memory_mb"`
-	CPUCores    int       `json:"cpu_cores" db:"cpu_cores"`
-	StorageGB   int       `json:"storage_gb" db:"storage_gb"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID             string    `json:"id" db:"id"`
+	UserID         int       `json:"user_id" db:"user_id"`
+	NodeID         int       `json:"node_id" db:"node_id"`
+	Name           string    `json:"name" db:"name"`
+	Status         string    `json:"status" db:"status"`
+	IPAddress      *string   `json:"ip_address" db:"ip_address"`
+	SSHPort        int       `json:"ssh_port" db:"ssh_port"`
+	MemoryMB       int       `json:"memory_mb" db:"memory_mb"`
+	CPUCores       int       `json:"cpu_cores" db:"cpu_cores"`
+	StorageGB      int       `json:"storage_gb" db:"storage_gb"`
+	AllocatedPorts []int     `json:"allocated_ports" db:"allocated_ports"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type Subdomain struct {
