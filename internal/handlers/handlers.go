@@ -772,81 +772,8 @@ func (h *Handler) TraefikConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, config)
 }
-func (h *Handler) CreateSubdomain(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
-	
-	if user.ContainerID == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no container found"})
-		return
-	}
 
-	var req struct {
-		Subdomain  string `json:"subdomain" binding:"required"`
-		TargetPort int    `json:"target_port" binding:"required"`
-	}
-	
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if !h.dns.IsValidSubdomain(req.Subdomain) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid subdomain format"})
-		return
-	}
-	var existingID int
-	err := h.db.QueryRow("SELECT id FROM subdomains WHERE subdomain = $1", req.Subdomain).Scan(&existingID)
-	if err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "subdomain already exists"})
-		return
-	}
-	var container models.Container
-	err = h.db.QueryRow(`
-		SELECT allocated_ports FROM containers WHERE id = $1
-	`, *user.ContainerID).Scan(pq.Array(&container.AllocatedPorts))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get container ports"})
-		return
-	}
-	portFound := false
-	for _, port := range container.AllocatedPorts {
-		if port == req.TargetPort {
-			portFound = true
-			break
-		}
-	}
-	if !portFound {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "target port not allocated to your container"})
-		return
-	}
-	_, err = h.db.Exec(`
-		INSERT INTO subdomains (user_id, subdomain, target_port, is_active)
-		VALUES ($1, $2, $3, true)
-	`, user.ID, req.Subdomain, req.TargetPort)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create subdomain"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":     "subdomain created successfully",
-		"subdomain":   req.Subdomain,
-		"target_port": req.TargetPort,
-	})
-}
-func (h *Handler) DeleteSubdomain(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
-	subdomainID := c.Param("id")
-	_, err := h.db.Exec(`
-		DELETE FROM subdomains 
-		WHERE id = $1 AND user_id = $2
-	`, subdomainID, user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete subdomain"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "subdomain deleted successfully"})
-}
+// GetUserSubdomains returns all subdomains for the current user
 func (h *Handler) GetUserSubdomains(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 
