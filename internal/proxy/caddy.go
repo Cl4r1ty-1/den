@@ -64,38 +64,30 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
         return fmt.Errorf("failed to marshal route: %w", err)
     }
 
-    routesURL := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
-    getResp, err := http.Get(routesURL)
+    patchOps := []map[string]interface{}{
+        {
+            "op":   "add",
+            "path": "/apps/http/servers/srv0/routes/0",
+            "value": json.RawMessage(routeJSON),
+        },
+    }
+    body, err := json.Marshal(patchOps)
     if err != nil {
-        return fmt.Errorf("failed to get current routes: %w", err)
-    }
-    defer getResp.Body.Close()
-
-    var existingRoutes []json.RawMessage
-    if err := json.NewDecoder(getResp.Body).Decode(&existingRoutes); err != nil {
-        return fmt.Errorf("failed to decode current routes: %w", err)
+        return fmt.Errorf("failed to marshal json patch: %w", err)
     }
 
-    newRoutes := make([]json.RawMessage, 0, len(existingRoutes)+1)
-    newRoutes = append(newRoutes, json.RawMessage(routeJSON))
-    newRoutes = append(newRoutes, existingRoutes...)
-
-    body, err := json.Marshal(newRoutes)
+    configURL := fmt.Sprintf("%s/config", c.adminURL)
+    fmt.Printf("making api call to caddy: PATCH %s\n", configURL)
+    req, err := http.NewRequest("PATCH", configURL, bytes.NewBuffer(body))
     if err != nil {
-        return fmt.Errorf("failed to marshal routes array: %w", err)
+        return fmt.Errorf("failed to create PATCH request: %w", err)
     }
-
-    fmt.Printf("making api call to caddy: PUT %s\n", routesURL)
-    req, err := http.NewRequest("PUT", routesURL, bytes.NewBuffer(body))
-    if err != nil {
-        return fmt.Errorf("failed to create PUT request: %w", err)
-    }
-    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Content-Type", "application/json-patch+json")
 
     client := &http.Client{}
     resp, err := client.Do(req)
     if err != nil {
-        return fmt.Errorf("failed to replace routes: %w", err)
+        return fmt.Errorf("failed to apply json patch: %w", err)
     }
     defer resp.Body.Close()
 
