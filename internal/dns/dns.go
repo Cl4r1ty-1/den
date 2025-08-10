@@ -64,38 +64,48 @@ func (s *Service) ValidateSubdomain(subdomain string) error {
 	return nil
 }
 
-func (s *Service) CreateDNSRecord(subdomain, nodeIP string, externalPort int) error {
-	fullDomain := fmt.Sprintf("%s.%s", subdomain, s.domain)
-	fmt.Printf("creating dns record: %s -> %s:%d\n", fullDomain, nodeIP, externalPort)
-	
-	publicIP := s.getPublicIP()
-	fmt.Printf("creating cloudflare DNS record: %s -> %s\n", fullDomain, publicIP)
-	if err := s.cloudflare.CreateRecord(fullDomain, publicIP); err != nil {
-		fmt.Printf("cloudflare API error: %v\n", err)
-		return fmt.Errorf("failed to create cloudflare record: %w", err)
-	}
-	
-	if err := s.caddy.AddSubdomain(fullDomain, nodeIP, externalPort); err != nil {
-		s.cloudflare.DeleteRecord(fullDomain)
-		return fmt.Errorf("failed to add caddy route: %w", err)
-	}
-	
-	return nil
+func (s *Service) CreateDNSRecord(subdomain, username, subdomainType, nodeIP string, externalPort int) error {
+    var fullDomain string
+    if subdomainType == "username" {
+        fullDomain = fmt.Sprintf("%s.%s", subdomain, s.domain)
+    } else {
+        fullDomain = fmt.Sprintf("%s.%s.%s", subdomain, username, s.domain)
+    }
+    fmt.Printf("creating dns record: %s -> %s:%d\n", fullDomain, nodeIP, externalPort)
+    
+    publicIP := s.getPublicIP()
+    fmt.Printf("creating cloudflare DNS record: %s -> %s\n", fullDomain, publicIP)
+    if err := s.cloudflare.CreateRecord(fullDomain, publicIP); err != nil {
+        fmt.Printf("cloudflare API error: %v\n", err)
+        return fmt.Errorf("failed to create cloudflare record: %w", err)
+    }
+    
+    if err := s.caddy.AddSubdomain(fullDomain, nodeIP, externalPort); err != nil {
+        s.cloudflare.DeleteRecord(fullDomain)
+        return fmt.Errorf("failed to add caddy route: %w", err)
+    }
+    
+    return nil
 }
-func (s *Service) DeleteDNSRecord(subdomain string) error {
-	fullDomain := fmt.Sprintf("%s.%s", subdomain, s.domain)
-	
-	fmt.Printf("deleting dns record: %s\n", fullDomain)
-	
-	if err := s.caddy.RemoveSubdomain(fullDomain); err != nil {
-		fmt.Printf("failed to remove caddy route: %v\n", err)
-	}
+func (s *Service) DeleteDNSRecord(subdomain, username, subdomainType string) error {
+    var fullDomain string
+    if subdomainType == "username" {
+        fullDomain = fmt.Sprintf("%s.%s", subdomain, s.domain)
+    } else {
+        fullDomain = fmt.Sprintf("%s.%s.%s", subdomain, username, s.domain)
+    }
 
-	if err := s.cloudflare.DeleteRecord(fullDomain); err != nil {
-		return fmt.Errorf("failed to delete cloudflare record: %w", err)
-	}
-	
-	return nil
+    fmt.Printf("deleting dns record: %s\n", fullDomain)
+    
+    if err := s.caddy.RemoveSubdomain(fullDomain); err != nil {
+        fmt.Printf("failed to remove caddy route: %v\n", err)
+    }
+
+    if err := s.cloudflare.DeleteRecord(fullDomain); err != nil {
+        return fmt.Errorf("failed to delete cloudflare record: %w", err)
+    }
+    
+    return nil
 }
 
 func (s *Service) ValidateUserPort(port int, allocatedPorts []int) error {

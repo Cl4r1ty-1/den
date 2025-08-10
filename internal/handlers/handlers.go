@@ -433,7 +433,7 @@ func (h *Handler) CreateSubdomain(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create subdomain"})
 		return
 	}
-	if err := h.dns.CreateDNSRecord(req.Subdomain, nodeIP, req.TargetPort); err != nil {
+    if err := h.dns.CreateDNSRecord(req.Subdomain, user.Username, req.SubdomainType, nodeIP, req.TargetPort); err != nil {
 		h.db.Exec("DELETE FROM subdomains WHERE id = $1", subdomainID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create DNS record"})
 		return
@@ -474,7 +474,9 @@ func (h *Handler) DeleteSubdomain(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
-	if err := h.dns.DeleteDNSRecord(subdomain); err != nil {
+    var subdomainType string
+    _ = h.db.QueryRow("SELECT subdomain_type FROM subdomains WHERE id = $1", subdomainID).Scan(&subdomainType)
+    if err := h.dns.DeleteDNSRecord(subdomain, user.Username, subdomainType); err != nil {
 		fmt.Printf("failed to delete DNS record: %v\n", err)
 
 	}
