@@ -30,70 +30,71 @@ func NewCaddyService(adminURL string) *CaddyService {
 }
 
 func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int) error {
-    fmt.Printf("adding route via caddy api: %s -> %s:%d\n", subdomain, targetHost, targetPort)
+	fmt.Printf("adding route via caddy api: %s -> %s:%d\n", subdomain, targetHost, targetPort)
 
-    routeID := fmt.Sprintf("subdomain-%s", subdomain)
+	routeID := fmt.Sprintf("subdomain-%s", strings.ReplaceAll(subdomain, ".", "-"))
 
-    route := CaddyRoute{
-        ID: routeID,
-        Match: []map[string]interface{}{
-            {
-                "host": []string{subdomain},
-            },
-        },
-        Handle: []map[string]interface{}{
-            {
-                "handler": "reverse_proxy",
-                "upstreams": []map[string]interface{}{
-                    {
-                        "dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
-                    },
-                },
-                "headers": map[string]interface{}{
-                    "request": map[string]interface{}{
-                        "set": map[string][]string{
-                            "Host":              {"{http.request.host}"},
-                            "X-Real-IP":         {"{http.request.remote.host}"},
-                            "X-Forwarded-For":   {"{http.request.header.X-Forwarded-For},{http.request.remote.host}"},
-                            "X-Forwarded-Proto": {"{http.request.scheme}"},
-                        },
-                    },
-                },
-            },
-        },
-    }
+	route := CaddyRoute{
+		ID: routeID,
+		Match: []map[string]interface{}{
+			{
+				"host": []string{subdomain},
+			},
+		},
+		Handle: []map[string]interface{}{
+			{
+				"handler": "reverse_proxy",
+				"upstreams": []map[string]interface{}{
+					{
+						"dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
+					},
+				},
+				"headers": map[string]interface{}{
+					"request": map[string]interface{}{
+						"set": map[string][]string{
+							"Host":              {"{http.request.host}"},
+							"X-Real-IP":         {"{http.request.remote.host}"},
+							"X-Forwarded-For":   {"{http.request.header.X-Forwarded-For},{http.request.remote.host}"},
+							"X-Forwarded-Proto": {"{http.request.scheme}"},
+						},
+					},
+				},
+			},
+		},
+	}
 
-    routeJSON, err := json.Marshal(route)
-    if err != nil {
-        return fmt.Errorf("failed to marshal route: %w", err)
-    }
+	routeJSON, err := json.Marshal(route)
+	if err != nil {
+		return fmt.Errorf("failed to marshal route: %w", err)
+	}
 
-    url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/0", c.adminURL)
-    req, err := http.NewRequest("POST", url, bytes.NewBuffer(routeJSON))
-    if err != nil {
-        return fmt.Errorf("failed to create request: %w", err)
-    }
-    req.Header.Set("Content-Type", "application/json")
+	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/1", c.adminURL)
+	
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(routeJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	fmt.Printf("making api call to caddy: POST %s\n", url)
 
-    fmt.Printf("making api call to caddy: POST %s\n", url)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to add route: %w", err)
+	}
+	defer resp.Body.Close()
 
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        return fmt.Errorf("failed to add route: %w", err)
-    }
-    defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		var bodyBytes []byte
+		if resp.Body != nil {
+			bodyBytes, _ = io.ReadAll(resp.Body)
+		}
+		return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
+	}
 
-    if resp.StatusCode >= 400 {
-        var bodyBytes []byte
-        if resp.Body != nil {
-            bodyBytes, _ = io.ReadAll(resp.Body)
-        }
-        return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
-    }
-
-    fmt.Printf("route added successfully! %s is now live\n", subdomain)
-    return nil
+	fmt.Printf("route added successfully! %s is now live\n", subdomain)
+	return nil
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
