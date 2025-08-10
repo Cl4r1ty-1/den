@@ -59,19 +59,45 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
         },
 	}
 
-	routeJSON, err := json.Marshal(route)
-	if err != nil {
-		return fmt.Errorf("failed to marshal route: %w", err)
-	}
+    routeJSON, err := json.Marshal(route)
+    if err != nil {
+        return fmt.Errorf("failed to marshal route: %w", err)
+    }
 
-	fmt.Printf("making api call to caddy: POST %s/config/apps/http/servers/srv0/routes\n", c.adminURL)
-	
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
-    resp, err := http.Post(url, "application/json", bytes.NewBuffer(routeJSON))
-	if err != nil {
-		return fmt.Errorf("failed to add route: %w", err)
-	}
-	defer resp.Body.Close()
+    routesURL := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
+    getResp, err := http.Get(routesURL)
+    if err != nil {
+        return fmt.Errorf("failed to get current routes: %w", err)
+    }
+    defer getResp.Body.Close()
+
+    var existingRoutes []json.RawMessage
+    if err := json.NewDecoder(getResp.Body).Decode(&existingRoutes); err != nil {
+        return fmt.Errorf("failed to decode current routes: %w", err)
+    }
+
+    newRoutes := make([]json.RawMessage, 0, len(existingRoutes)+1)
+    newRoutes = append(newRoutes, json.RawMessage(routeJSON))
+    newRoutes = append(newRoutes, existingRoutes...)
+
+    body, err := json.Marshal(newRoutes)
+    if err != nil {
+        return fmt.Errorf("failed to marshal routes array: %w", err)
+    }
+
+    fmt.Printf("making api call to caddy: PUT %s\n", routesURL)
+    req, err := http.NewRequest("PUT", routesURL, bytes.NewBuffer(body))
+    if err != nil {
+        return fmt.Errorf("failed to create PUT request: %w", err)
+    }
+    req.Header.Set("Content-Type", "application/json")
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return fmt.Errorf("failed to replace routes: %w", err)
+    }
+    defer resp.Body.Close()
 
     if resp.StatusCode >= 400 {
         var bodyBytes []byte
@@ -79,10 +105,10 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
             bodyBytes, _ = io.ReadAll(resp.Body)
         }
         return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
-	}
+    }
 
-	fmt.Printf("route added successfully! %s is now live\n", subdomain)
-	return nil
+    fmt.Printf("route added successfully! %s is now live\n", subdomain)
+    return nil
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
