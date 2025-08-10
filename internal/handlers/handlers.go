@@ -152,6 +152,7 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 	var container *models.Container
 	if user.ContainerID != nil {
 		container = &models.Container{}
+		var allocatedPorts pq.Int64Array
 		err := h.db.QueryRow(`
 			SELECT id, user_id, node_id, name, status, ip_address, ssh_port,
 				   memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
@@ -160,11 +161,17 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 			&container.ID, &container.UserID, &container.NodeID, &container.Name,
 			&container.Status, &container.IPAddress, &container.SSHPort,
 			&container.MemoryMB, &container.CPUCores, &container.StorageGB,
-			pq.Array(&container.AllocatedPorts), &container.CreatedAt, &container.UpdatedAt,
+			&allocatedPorts, &container.CreatedAt, &container.UpdatedAt,
 		)
 		if err != nil {
 			fmt.Printf("error loading container for user %d: %v\n", user.ID, err)
 			container = nil
+		} else {
+			// i am a dumbassssssssss
+			container.AllocatedPorts = make([]int, len(allocatedPorts))
+			for i, port := range allocatedPorts {
+				container.AllocatedPorts[i] = int(port)
+			}
 		}
 	}
 	rows, err := h.db.Query(`
