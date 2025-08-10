@@ -33,7 +33,7 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 		return fmt.Errorf("failed to get current config: %w", err)
 	}
 
-    routes, srv0, err := extractRoutesFromConfig(config)
+	routes, srv0, err := extractRoutesFromConfig(config)
 	if err != nil {
 		return err
 	}
@@ -78,9 +78,8 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 	} else {
 		finalRoutes = append(finalRoutes, newRoute)
 	}
-    srv0["routes"] = finalRoutes
-    ensureErrorHandlers(srv0)
-    return c.loadConfig(config)
+	srv0["routes"] = finalRoutes
+	return c.loadConfig(config)
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
@@ -182,10 +181,9 @@ func (c *CaddyService) RebuildAllRoutes(db *sql.DB) error {
 		finalRoutes = append(baseRoutes, managedRoutes...)
 	}
 	
-    srv0["routes"] = finalRoutes
-    ensureErrorHandlers(srv0)
+	srv0["routes"] = finalRoutes
 
-    if err := c.loadConfig(config); err != nil {
+	if err := c.loadConfig(config); err != nil {
 		return fmt.Errorf("failed to apply rebuilt routes: %w", err)
 	}
 	
@@ -273,23 +271,4 @@ func findWildcardIndex(routes []CaddyRoute) int {
 		}
 	}
 	return -1
-}
-func ensureErrorHandlers(srv0 map[string]interface{}) {
-    if _, ok := srv0["handle_errors"]; ok {
-        return
-    }
-
-    srv0["handle_errors"] = map[string]interface{}{
-        "routes": []map[string]interface{}{
-            {
-                "match": []map[string]interface{}{
-                    {"expression": "{http.error.status_code} == 502"},
-                },
-                "handle": []map[string]interface{}{
-                    {"handler": "rewrite", "uri": "/502.html"},
-                    {"handler": "file_server", "root": "/var/www/errors"},
-                },
-            },
-        },
-    }
 }
