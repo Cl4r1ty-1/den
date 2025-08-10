@@ -37,26 +37,26 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 				"host": []string{subdomain},
 			},
 		},
-		Handle: []map[string]interface{}{
-			{
-				"handler": "reverse_proxy",
-				"upstreams": []map[string]interface{}{
-					{
-						"dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
-					},
-				},
-				"headers": map[string]interface{}{
-					"request": map[string]interface{}{
-						"set": map[string]string{
-							"Host":              "{http.request.host}",
-							"X-Real-IP":         "{http.request.remote.host}",
-							"X-Forwarded-For":   "{http.request.header.X-Forwarded-For},{http.request.remote.host}",
-							"X-Forwarded-Proto": "{http.request.scheme}",
-						},
-					},
-				},
-			},
-		},
+        Handle: []map[string]interface{}{
+            {
+                "handler": "reverse_proxy",
+                "upstreams": []map[string]interface{}{
+                    {
+                        "dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
+                    },
+                },
+                "headers": map[string]interface{}{
+                    "request": map[string]interface{}{
+                        "set": map[string][]string{
+                            "Host":              {"{http.request.host}"},
+                            "X-Real-IP":         {"{http.request.remote.host}"},
+                            "X-Forwarded-For":   {"{http.request.header.X-Forwarded-For},{http.request.remote.host}"},
+                            "X-Forwarded-Proto": {"{http.request.scheme}"},
+                        },
+                    },
+                },
+            },
+        },
 	}
 
 	routeJSON, err := json.Marshal(route)
