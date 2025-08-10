@@ -46,6 +46,8 @@ func (c *CloudflareService) CreateRecord(subdomain, targetIP string) error {
 	if c.apiToken == "" || c.zoneID == "" {
 		return fmt.Errorf("cloudflare API token or zone ID not configured")
 	}
+	
+	fmt.Printf("cloudflare config: zoneID=%s, hasToken=%t\n", c.zoneID, c.apiToken != "")
 
 	record := CloudflareRecord{
 		Type:    "A",
@@ -61,6 +63,7 @@ func (c *CloudflareService) CreateRecord(subdomain, targetIP string) error {
 	}
 
 	url := fmt.Sprintf("%s/zones/%s/dns_records", c.baseURL, c.zoneID)
+	fmt.Printf("cloudflare API URL: %s\n", url)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
