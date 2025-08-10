@@ -26,12 +26,34 @@ type CloudflareRecord struct {
 type CloudflareResponse struct {
 	Success bool                `json:"success"`
 	Errors  []CloudflareError   `json:"errors"`
-	Result  []CloudflareRecord  `json:"result"`
+    Result  []CloudflareRecord  `json:"result"`
 }
 
 type CloudflareError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// Cloudflare responses vary per endpoint. Create/Update return a single object,
+// list/search return an array, and delete returns a small result payload.
+type CloudflareListResponse struct {
+    Success bool               `json:"success"`
+    Errors  []CloudflareError  `json:"errors"`
+    Result  []CloudflareRecord `json:"result"`
+}
+
+type CloudflareSingleResponse struct {
+    Success bool              `json:"success"`
+    Errors  []CloudflareError `json:"errors"`
+    Result  CloudflareRecord  `json:"result"`
+}
+
+type CloudflareDeleteResponse struct {
+    Success bool              `json:"success"`
+    Errors  []CloudflareError `json:"errors"`
+    Result  struct {
+        ID string `json:"id"`
+    } `json:"result"`
 }
 
 func NewCloudflareService() *CloudflareService {
@@ -79,7 +101,7 @@ func (c *CloudflareService) CreateRecord(subdomain, targetIP string) error {
 	}
 	defer resp.Body.Close()
 
-	var cfResp CloudflareResponse
+    var cfResp CloudflareSingleResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cfResp); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -125,7 +147,7 @@ func (c *CloudflareService) DeleteRecord(subdomain string) error {
 	}
 	defer resp.Body.Close()
 
-	var cfResp CloudflareResponse
+    var cfResp CloudflareDeleteResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cfResp); err != nil {
 		return fmt.Errorf("failed to decode delete response: %w", err)
 	}
@@ -157,7 +179,7 @@ func (c *CloudflareService) findRecordID(subdomain string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var cfResp CloudflareResponse
+    var cfResp CloudflareListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cfResp); err != nil {
 		return "", fmt.Errorf("failed to decode search response: %w", err)
 	}
@@ -215,7 +237,7 @@ func (c *CloudflareService) UpdateRecord(subdomain, newTargetIP string) error {
 	}
 	defer resp.Body.Close()
 
-	var cfResp CloudflareResponse
+    var cfResp CloudflareSingleResponse
 	if err := json.NewDecoder(resp.Body).Decode(&cfResp); err != nil {
 		return fmt.Errorf("failed to decode update response: %w", err)
 	}
