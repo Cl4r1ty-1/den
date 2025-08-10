@@ -380,10 +380,17 @@ func (h *Handler) CreateSubdomain(c *gin.Context) {
 	}
 	var allocatedPorts []int
 	if user.ContainerID != nil {
-		err := h.db.QueryRow("SELECT allocated_ports FROM containers WHERE id = $1", *user.ContainerID).Scan(pq.Array(&allocatedPorts))
+		var allocatedPortsArray pq.Int64Array
+		err := h.db.QueryRow("SELECT allocated_ports FROM containers WHERE id = $1", *user.ContainerID).Scan(&allocatedPortsArray)
 		if err != nil {
+			fmt.Printf("error getting allocated ports for user %d: %v\n", user.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get allocated ports"})
 			return
+		}
+		// ok but like this is go's fault not mine
+		allocatedPorts = make([]int, len(allocatedPortsArray))
+		for i, port := range allocatedPortsArray {
+			allocatedPorts[i] = int(port)
 		}
 	}
 	if err := h.dns.ValidateUserPort(req.TargetPort, allocatedPorts); err != nil {
