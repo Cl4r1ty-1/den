@@ -14,11 +14,7 @@ type CaddyService struct {
 	adminURL string
 }
 
-type CaddyRoute struct {
-    ID     string                   `json:"@id,omitempty"`
-    Match  []map[string]interface{} `json:"match"`
-    Handle []map[string]interface{} `json:"handle"`
-}
+type CaddyRoute map[string]interface{}
 
 func NewCaddyService(adminURL string) *CaddyService {
 	if adminURL == "" {
@@ -30,78 +26,81 @@ func NewCaddyService(adminURL string) *CaddyService {
 }
 
 func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int) error {
-	fmt.Printf("adding route via caddy api: %s -> %s:%d\n", subdomain, targetHost, targetPort)
+    fmt.Printf("adding route via caddy api: %s -> %s:%d\n", subdomain, targetHost, targetPort)
 
-	routeID := fmt.Sprintf("subdomain-%s", strings.ReplaceAll(subdomain, ".", "-"))
+    routes, err := c.ListActiveRoutes()
+    if err != nil {
+        return fmt.Errorf("failed to get current routes for adding: %w", err)
+    }
 
-	route := CaddyRoute{
-		ID: routeID,
-		Match: []map[string]interface{}{
-			{
-				"host": []string{subdomain},
-			},
-		},
-		Handle: []map[string]interface{}{
-			{
-				"handler": "reverse_proxy",
-				"upstreams": []map[string]interface{}{
-					{
-						"dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
-					},
-				},
-				"headers": map[string]interface{}{
-					"request": map[string]interface{}{
-						"set": map[string][]string{
-							"Host":              {"{http.request.host}"},
-							"X-Real-IP":         {"{http.request.remote.host}"},
-							"X-Forwarded-For":   {"{http.request.header.X-Forwarded-For},{http.request.remote.host}"},
-							"X-Forwarded-Proto": {"{http.request.scheme}"},
-						},
-					},
-				},
-			},
-		},
-	}
+    routeID := fmt.Sprintf("managed-subdomain-%s", subdomain)
+    newRoute := CaddyRoute{
+        "@id": routeID,
+        "match": []map[string]interface{}{
+            {
+                "host": []string{subdomain},
+            },
+        },
+        "handle": []map[string]interface{}{
+            {
+                "handler": "reverse_proxy",
+                "upstreams": []map[string]interface{}{
+                    {
+                        "dial": fmt.Sprintf("%s:%d", targetHost, targetPort),
+                    },
+                },
+                "headers": map[string]interface{}{
+                    "request": map[string]interface{}{
+                        "set": map[string][]string{
+                            "Host":              {"{http.request.host}"},
+                            "X-Real-IP":         {"{http.request.remote.host}"},
+                            "X-Forwarded-For":   {"{http.request.header.X-Forwarded-For},{http.request.remote.host}"},
+                            "X-Forwarded-Proto": {"{http.request.scheme}"},
+                        },
+                    },
+                },
+            },
+        },
+    }
 
-	routeJSON, err := json.Marshal(route)
-	if err != nil {
-		return fmt.Errorf("failed to marshal route: %w", err)
-	}
+    wildcardIndex := -1
+    for i, route := range routes {
+        if id, ok := route["@id"].(string); ok && id == routeID {
+            routes = append(routes[:i], routes[i+1:]...)
+            break
+        }
 
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/1", c.adminURL)
-	
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(routeJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	
-	fmt.Printf("making api call to caddy: POST %s\n", url)
+        match, ok := route["match"].([]interface{})
+        if !ok || len(match) == 0 {
+            continue
+        }
+        matchCond, ok := match[0].(map[string]interface{})
+        if !ok {
+            continue
+        }
+        hosts, ok := matchCond["host"].([]interface{})
+        if !ok || len(hosts) == 0 {
+            continue
+        }
+        if host, ok := hosts[0].(string); ok && host == "*.hack.kim" {
+            wildcardIndex = i
+        }
+    }
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to add route: %w", err)
-	}
-	defer resp.Body.Close()
+    if wildcardIndex != -1 {
+        routes = append(routes[:wildcardIndex], append([]CaddyRoute{newRoute}, routes[wildcardIndex:]...)...)
+    } else {
+        routes = append(routes, newRoute)
+    }
 
-	if resp.StatusCode >= 400 {
-		var bodyBytes []byte
-		if resp.Body != nil {
-			bodyBytes, _ = io.ReadAll(resp.Body)
-		}
-		return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
-	}
-
-	fmt.Printf("route added successfully! %s is now live\n", subdomain)
-	return nil
+    return c.updateRoutes(routes)
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
-    routeID := fmt.Sprintf("subdomain-%s", subdomain)
-    deleteURL := fmt.Sprintf("%s/id/%s", c.adminURL, routeID)
+    routeID := fmt.Sprintf("managed-subdomain-%s", subdomain)
+    url := fmt.Sprintf("%s/id/%s", c.adminURL, routeID)
 
-    req, err := http.NewRequest("DELETE", deleteURL, nil)
+    req, err := http.NewRequest("DELETE", url, nil)
     if err != nil {
         return fmt.Errorf("failed to create delete request: %w", err)
     }
@@ -152,27 +151,56 @@ func (c *CaddyService) GetCurrentConfig() (map[string]interface{}, error) {
 }
 
 func (c *CaddyService) ListActiveRoutes() ([]CaddyRoute, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get routes: %w", err)
-	}
-	defer resp.Body.Close()
+    resp, err := http.Get(fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL))
+    if err != nil {
+        return nil, fmt.Errorf("failed to get routes: %w", err)
+    }
+    defer resp.Body.Close()
 
-	var routes []CaddyRoute
-	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
-		return nil, fmt.Errorf("failed to decode routes: %w", err)
-	}
+    var routes []CaddyRoute
+    if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
+        if err == io.EOF {
+            return []CaddyRoute{}, nil
+        }
+        return nil, fmt.Errorf("failed to decode routes: %w", err)
+    }
 
-	return routes, nil
+    return routes, nil
 }
+
 func (c *CaddyService) RebuildAllRoutes(db *sql.DB) error {
     fmt.Println("rebuilding all caddy routes from database...")
 
-    if err := c.clearAllManagedRoutes(); err != nil {
-        return fmt.Errorf("failed to clear existing routes: %w", err)
+    currentRoutes, err := c.ListActiveRoutes()
+    if err != nil {
+        return fmt.Errorf("failed to get current routes for rebuild: %w", err)
     }
+
+    finalRoutes := make([]CaddyRoute, 0)
+    for _, route := range currentRoutes {
+        if id, ok := route["@id"].(string); ok && strings.HasPrefix(id, "managed-subdomain-") {
+            continue
+        }
+        finalRoutes = append(finalRoutes, route)
+    }
+
+    wildcardIndex := -1
+    for i, route := range finalRoutes {
+        match, _ := route["match"].([]interface{})
+        if len(match) > 0 {
+            if matchCond, _ := match[0].(map[string]interface{}); matchCond != nil {
+                if hosts, _ := matchCond["host"].([]interface{}); len(hosts) > 0 {
+                    if host, _ := hosts[0].(string); host == "*.hack.kim" {
+                        wildcardIndex = i
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     rows, err := db.Query(`
-        SELECT s.subdomain, s.target_port, s.subdomain_type, u.username,
+        SELECT s.subdomain, s.target_port, s.subdomain_type, u.username, 
                COALESCE(n.public_hostname, n.hostname) as node_ip
         FROM subdomains s
         JOIN users u ON s.user_id = u.id
@@ -185,62 +213,73 @@ func (c *CaddyService) RebuildAllRoutes(db *sql.DB) error {
     }
     defer rows.Close()
 
+    var managedRoutes []CaddyRoute
     for rows.Next() {
-        var subdomain, subdomainType, username string
+        var subdomain, subdomainType, username, nodeIP string
         var targetPort int
-        var nodeIP *string
 
         if err := rows.Scan(&subdomain, &targetPort, &subdomainType, &username, &nodeIP); err != nil {
             fmt.Printf("error scanning row: %v\n", err)
             continue
         }
 
-        if nodeIP == nil {
-            fmt.Printf("skipping %s - no node IP address\n", subdomain)
-            continue
-        }
-
-        var fullSubdomain string
+        fullSubdomain := ""
         if subdomainType == "username" {
             fullSubdomain = fmt.Sprintf("%s.hack.kim", subdomain)
         } else {
             fullSubdomain = fmt.Sprintf("%s.%s.hack.kim", subdomain, username)
         }
 
-        if err := c.AddSubdomain(fullSubdomain, *nodeIP, targetPort); err != nil {
-            fmt.Printf("failed to add route for %s: %v\n", fullSubdomain, err)
-            continue
+        newRoute := CaddyRoute{
+            "@id":   fmt.Sprintf("managed-subdomain-%s", fullSubdomain),
+            "match": []map[string]interface{}{{"host": []string{fullSubdomain}}},
+            "handle": []map[string]interface{}{
+                {
+                    "handler":   "reverse_proxy",
+                    "upstreams": []map[string]interface{}{{"dial": fmt.Sprintf("%s:%d", nodeIP, targetPort)}},
+                },
+            },
         }
+        managedRoutes = append(managedRoutes, newRoute)
     }
 
-    fmt.Printf("successfully rebuilt routes from database\n")
+    if wildcardIndex != -1 {
+        finalRoutes = append(finalRoutes[:wildcardIndex], append(managedRoutes, finalRoutes[wildcardIndex:]...)...)
+    } else {
+        finalRoutes = append(finalRoutes, managedRoutes...)
+    }
+
+    if err := c.updateRoutes(finalRoutes); err != nil {
+        return fmt.Errorf("failed to apply rebuilt routes: %w", err)
+    }
+
+    fmt.Printf("successfully rebuilt %d routes from database\n", len(managedRoutes))
     return nil
 }
 
-func (c *CaddyService) clearAllManagedRoutes() error {
-    routes, err := c.ListActiveRoutes()
+func (c *CaddyService) updateRoutes(routes []CaddyRoute) error {
+    routesJSON, err := json.Marshal(routes)
     if err != nil {
-        return fmt.Errorf("failed to get current routes: %w", err)
+        return fmt.Errorf("failed to marshal routes for update: %w", err)
     }
 
-    for _, route := range routes {
-        if route.ID != "" && strings.HasPrefix(route.ID, "subdomain-") {
-            deleteURL := fmt.Sprintf("%s/id/%s", c.adminURL, route.ID)
-            req, err := http.NewRequest("DELETE", deleteURL, nil)
-            if err != nil {
-                fmt.Printf("failed to create delete request for %s: %v\n", route.ID, err)
-                continue
-            }
-
-            client := &http.Client{}
-            resp, err := client.Do(req)
-            if err != nil {
-                fmt.Printf("failed to delete route %s: %v\n", route.ID, err)
-                continue
-            }
-            resp.Body.Close()
-        }
+    url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
+    req, err := http.NewRequest("PUT", url, bytes.NewBuffer(routesJSON))
+    if err != nil {
+        return fmt.Errorf("failed to create update request: %w", err)
     }
+    req.Header.Set("Content-Type", "application/json")
 
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return fmt.Errorf("failed to update routes in caddy: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode >= 400 {
+        bodyBytes, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("caddy API error on update: %s - %s", resp.Status, string(bodyBytes))
+    }
     return nil
 }
