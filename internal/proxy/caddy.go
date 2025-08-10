@@ -64,9 +64,14 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 		return fmt.Errorf("failed to marshal route: %w", err)
 	}
 
-	fmt.Printf("making api call to caddy: POST %s/config/apps/http/servers/srv0/routes\n", c.adminURL)
+	insertIndex, err := c.findInsertionIndex()
+	if err != nil {
+		return fmt.Errorf("failed to find insertion index: %w", err)
+	}
+
+	fmt.Printf("inserting route at index %d via caddy api: POST %s/config/apps/http/servers/srv0/routes/%d\n", insertIndex, c.adminURL, insertIndex)
 	
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
+	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/%d", c.adminURL, insertIndex)
     resp, err := http.Post(url, "application/json", bytes.NewBuffer(routeJSON))
 	if err != nil {
 		return fmt.Errorf("failed to add route: %w", err)
@@ -83,6 +88,43 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 
 	fmt.Printf("route added successfully! %s is now live\n", subdomain)
 	return nil
+}
+
+func (c *CaddyService) findInsertionIndex() (int, error) {
+	resp, err := http.Get(fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL))
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current routes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var routes []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
+		return 0, fmt.Errorf("failed to decode routes: %w", err)
+	}
+
+	for i, route := range routes {
+		if terminal, exists := route["terminal"]; exists {
+			if terminalBool, ok := terminal.(bool); ok && terminalBool {
+				return i, nil
+			}
+		}
+		
+		if matchSlice, ok := route["match"].([]interface{}); ok {
+			for _, match := range matchSlice {
+				if matchMap, ok := match.(map[string]interface{}); ok {
+					if hosts, ok := matchMap["host"].([]interface{}); ok {
+						for _, host := range hosts {
+							if hostStr, ok := host.(string); ok && hostStr == "*.hack.kim" {
+								return i, nil
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return len(routes), nil
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
