@@ -1,19 +1,34 @@
 package dns
 
 import (
+	"database/sql"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"os"
 	"strings"
+	
+	"github.com/den/internal/proxy"
 )
 
 type Service struct {
-	domain string
+	domain     string
+	caddy      *proxy.CaddyService
+	cloudflare *CloudflareService
 }
 
 func NewService() *Service {
 	return &Service{
-		domain: "hack.kim",
+		domain:     "hack.kim",
+		caddy:      proxy.NewCaddyService(""),
+		cloudflare: NewCloudflareService(),
 	}
+}
+
+func (s *Service) RebuildRoutesFromDatabase(db *sql.DB) error {
+	fmt.Println("rebuilding caddy routes from database on startup...")
+	return s.caddy.RebuildAllRoutes(db)
 }
 
 func (s *Service) ValidateSubdomain(subdomain string) error {
@@ -49,48 +64,45 @@ func (s *Service) ValidateSubdomain(subdomain string) error {
 	return nil
 }
 
-// im too lazy to implement cf support
-func (s *Service) CreateDNSRecord(subdomain, targetIP string, port int) error {
+func (s *Service) CreateDNSRecord(subdomain, nodeIP string, externalPort int) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, s.domain)
-	fmt.Printf("would create DNS record: %s -> %s:%d\n", fullDomain, targetIP, port)
-	return s.updateProxyConfig(subdomain, targetIP, port)
+	fmt.Printf("creating dns record: %s -> %s:%d\n", fullDomain, nodeIP, externalPort)
+	
+	publicIP := s.getPublicIP()
+	if err := s.cloudflare.CreateRecord(fullDomain, publicIP); err != nil {
+		return fmt.Errorf("failed to create cloudflare record: %w", err)
+	}
+	
+	if err := s.caddy.AddSubdomain(fullDomain, nodeIP, externalPort); err != nil {
+		s.cloudflare.DeleteRecord(fullDomain)
+		return fmt.Errorf("failed to add caddy route: %w", err)
+	}
+	
+	return nil
 }
 func (s *Service) DeleteDNSRecord(subdomain string) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, s.domain)
 	
-	fmt.Printf("wuld delete DNS record: %s\n", fullDomain)
+	fmt.Printf("deleting dns record: %s\n", fullDomain)
 	
-	return s.removeProxyConfig(subdomain)
-}
+	if err := s.caddy.RemoveSubdomain(fullDomain); err != nil {
+		fmt.Printf("failed to remove caddy route: %v\n", err)
+	}
 
-// idk wether to use like caddy or nginx or traefik for reverse proxy
-func (s *Service) updateProxyConfig(subdomain, targetIP string, port int) error {
-// so for now i guess nginx?
-	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s.%s", subdomain, s.domain)
-	config := fmt.Sprintf(`
-server {
-    listen 80;
-    server_name %s.%s;
-    
-    location / {
-        proxy_pass http://%s:%d;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-`, subdomain, s.domain, targetIP, port)
-
-	fmt.Printf("write nginx config to %s:\n%s\n", configPath, config)
+	if err := s.cloudflare.DeleteRecord(fullDomain); err != nil {
+		return fmt.Errorf("failed to delete cloudflare record: %w", err)
+	}
+	
 	return nil
 }
-func (s *Service) removeProxyConfig(subdomain string) error {
-	configPath := fmt.Sprintf("/etc/nginx/sites-available/%s.%s", subdomain, s.domain)
-	symlinkPath := fmt.Sprintf("/etc/nginx/sites-enabled/%s.%s", subdomain, s.domain)
-	
-	fmt.Printf("Would remove nginx config: %s and %s\n", configPath, symlinkPath)	
-	return nil
+
+func (s *Service) ValidateUserPort(port int, allocatedPorts []int) error {
+	for _, allocatedPort := range allocatedPorts {
+		if port == allocatedPort {
+			return nil
+		}
+	}
+	return fmt.Errorf("port %d is not in your allocated ports", port)
 }
 
 func (s *Service) GetAvailablePort() (int, error) {
@@ -120,4 +132,49 @@ func (s *Service) ValidatePort(port int) error {
 	}
 	
 	return nil
+}
+
+func (s *Service) getPublicIP() string {
+	if publicIP := os.Getenv("PUBLIC_IP"); publicIP != "" {
+		return publicIP
+	}
+	
+	if detectedIP := s.detectPublicIP(); detectedIP != "" {
+		return detectedIP
+	}
+	
+	fmt.Println("could not detect public IP, using fallback. set the PUBLIC_IP environment variable ya ding dong")
+	return "127.0.0.1"
+}
+
+func (s *Service) detectPublicIP() string {
+	services := []string{
+		"https://api.ipify.org",
+		"https://checkip.amazonaws.com",
+		"https://icanhazip.com",
+	}
+	
+	client := &http.Client{}
+	for _, service := range services {
+		resp, err := client.Get(service)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode == 200 {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				continue
+			}
+			
+			ip := strings.TrimSpace(string(body))
+			if net.ParseIP(ip) != nil {
+				fmt.Printf("detected public IP: %s\n", ip)
+				return ip
+			}
+		}
+	}
+	
+	return ""
 }

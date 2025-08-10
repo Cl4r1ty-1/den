@@ -50,13 +50,14 @@ type Container struct {
 }
 
 type Subdomain struct {
-	ID          int       `json:"id" db:"id"`
-	UserID      int       `json:"user_id" db:"user_id"`
-	Subdomain   string    `json:"subdomain" db:"subdomain"`
-	TargetPort  int       `json:"target_port" db:"target_port"`
-	IsActive    bool      `json:"is_active" db:"is_active"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID            int       `json:"id" db:"id"`
+	UserID        int       `json:"user_id" db:"user_id"`
+	Subdomain     string    `json:"subdomain" db:"subdomain"`
+	TargetPort    int       `json:"target_port" db:"target_port"`
+	SubdomainType string    `json:"subdomain_type" db:"subdomain_type"`
+	IsActive      bool      `json:"is_active" db:"is_active"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type PortMapping struct {

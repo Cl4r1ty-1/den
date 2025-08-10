@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
+	
+	"github.com/lib/pq"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
@@ -344,19 +347,40 @@ func (h *Handler) CreateSubdomain(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 	
 	var req struct {
-		Subdomain  string `json:"subdomain" binding:"required"`
-		TargetPort int    `json:"target_port" binding:"required"`
+		Subdomain     string `json:"subdomain" binding:"required"`
+		TargetPort    int    `json:"target_port" binding:"required"`
+		SubdomainType string `json:"subdomain_type,omitempty"`
 	}
 	
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.SubdomainType == "" {
+		req.SubdomainType = "project"
+	}
+	if req.SubdomainType != "username" && req.SubdomainType != "project" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "subdomain_type must be 'username' or 'project'"})
+		return
+	}
+	if req.SubdomainType == "username" && req.Subdomain != user.Username {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username subdomain must match your username"})
+		return
+	}
+	
 	if err := h.dns.ValidateSubdomain(req.Subdomain); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.dns.ValidatePort(req.TargetPort); err != nil {
+	var allocatedPorts []int
+	if user.ContainerID != nil {
+		err := h.db.QueryRow("SELECT allocated_ports FROM containers WHERE id = $1", *user.ContainerID).Scan(pq.Array(&allocatedPorts))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get allocated ports"})
+			return
+		}
+	}
+	if err := h.dns.ValidateUserPort(req.TargetPort, allocatedPorts); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -370,11 +394,16 @@ func (h *Handler) CreateSubdomain(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "subdomain already taken"})
 		return
 	}
-	var containerIP string
+	var nodeIP string
 	if user.ContainerID != nil {
-		err = h.db.QueryRow("SELECT ip_address FROM containers WHERE id = $1", *user.ContainerID).Scan(&containerIP)
+		err = h.db.QueryRow(`
+			SELECT COALESCE(n.public_hostname, n.hostname) 
+			FROM containers c 
+			JOIN nodes n ON c.node_id = n.id 
+			WHERE c.id = $1
+		`, *user.ContainerID).Scan(&nodeIP)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "container not ready"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "container node not found"})
 			return
 		}
 	} else {
@@ -383,24 +412,31 @@ func (h *Handler) CreateSubdomain(c *gin.Context) {
 	}
 	var subdomainID int
 	err = h.db.QueryRow(`
-		INSERT INTO subdomains (user_id, subdomain, target_port, is_active)
-		VALUES ($1, $2, $3, true)
+		INSERT INTO subdomains (user_id, subdomain, target_port, subdomain_type, is_active)
+		VALUES ($1, $2, $3, $4, true)
 		RETURNING id
-	`, user.ID, req.Subdomain, req.TargetPort).Scan(&subdomainID)
+	`, user.ID, req.Subdomain, req.TargetPort, req.SubdomainType).Scan(&subdomainID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create subdomain"})
 		return
 	}
-	if err := h.dns.CreateDNSRecord(req.Subdomain, containerIP, req.TargetPort); err != nil {
+	if err := h.dns.CreateDNSRecord(req.Subdomain, nodeIP, req.TargetPort); err != nil {
 		h.db.Exec("DELETE FROM subdomains WHERE id = $1", subdomainID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create DNS record"})
 		return
 	}
+	var fullSubdomain string
+	if req.SubdomainType == "username" {
+		fullSubdomain = req.Subdomain + ".hack.kim"
+	} else {
+		fullSubdomain = req.Subdomain + "." + user.Username + ".hack.kim"
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":    "Subdomain created successfully",
-		"subdomain":  req.Subdomain + ".hack.kim",
-		"target_port": req.TargetPort,
+		"message":       "subdomain created successfully",
+		"subdomain":     fullSubdomain,
+		"target_port":   req.TargetPort,
+		"subdomain_type": req.SubdomainType,
 	})
 }
 
@@ -425,7 +461,10 @@ func (h *Handler) DeleteSubdomain(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
-	h.dns.DeleteDNSRecord(subdomain)
+	if err := h.dns.DeleteDNSRecord(subdomain); err != nil {
+		fmt.Printf("failed to delete DNS record: %v\n", err)
+
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Subdomain deleted successfully"})
 }
@@ -710,75 +749,15 @@ func (h *Handler) APIGetContainer(c *gin.Context) {
 	c.JSON(http.StatusOK, container)
 }
 
-func (h *Handler) TraefikConfig(c *gin.Context) {
-	rows, err := h.db.Query(`
-		SELECT s.subdomain, s.target_port, n.public_hostname, n.hostname
-		FROM subdomains s
-		JOIN users u ON s.user_id = u.id
-		JOIN containers co ON u.container_id = co.id
-		JOIN nodes n ON co.node_id = n.id
-		WHERE s.is_active = true
-	`)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch subdomains"})
-		return
-	}
-	defer rows.Close()
-
-	config := map[string]interface{}{
-		"http": map[string]interface{}{
-			"routers":  map[string]interface{}{},
-			"services": map[string]interface{}{},
-		},
-	}
-
-	routers := config["http"].(map[string]interface{})["routers"].(map[string]interface{})
-	services := config["http"].(map[string]interface{})["services"].(map[string]interface{})
-
-	for rows.Next() {
-		var subdomain, hostname string
-		var publicHostname *string
-		var targetPort int
-		
-		if err := rows.Scan(&subdomain, &targetPort, &publicHostname, &hostname); err != nil {
-			continue
-		}
-
-		nodeHost := hostname
-		if publicHostname != nil && *publicHostname != "" {
-			nodeHost = *publicHostname
-		}
-
-		routerName := fmt.Sprintf("subdomain-%s", subdomain)
-		serviceName := fmt.Sprintf("service-%s", subdomain)
-		routers[routerName] = map[string]interface{}{
-			"rule":         fmt.Sprintf("Host(`%s`)", subdomain),
-			"service":      serviceName,
-			"entrypoints":  []string{"websecure"},
-			"tls": map[string]interface{}{
-				"certresolver": "letsencrypt",
-			},
-		}
-		services[serviceName] = map[string]interface{}{
-			"loadBalancer": map[string]interface{}{
-				"servers": []map[string]interface{}{
-					{
-						"url": fmt.Sprintf("http://%s:%d", nodeHost, targetPort),
-					},
-				},
-			},
-		}
-	}
-
-	c.JSON(http.StatusOK, config)
+func (h *Handler) updateTraefikConfig() error {
+	return nil
 }
 
-// GetUserSubdomains returns all subdomains for the current user
 func (h *Handler) GetUserSubdomains(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 
 	rows, err := h.db.Query(`
-		SELECT id, subdomain, target_port, is_active, created_at
+		SELECT id, subdomain, target_port, subdomain_type, is_active, created_at
 		FROM subdomains
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -793,7 +772,7 @@ func (h *Handler) GetUserSubdomains(c *gin.Context) {
 	for rows.Next() {
 		var subdomain models.Subdomain
 		if err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort, 
-			&subdomain.IsActive, &subdomain.CreatedAt); err != nil {
+			&subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt); err != nil {
 			continue
 		}
 		subdomains = append(subdomains, subdomain)

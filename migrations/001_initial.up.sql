@@ -45,6 +45,7 @@ CREATE TABLE subdomains (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     subdomain VARCHAR(255) UNIQUE NOT NULL,
     target_port INTEGER NOT NULL,
+    subdomain_type VARCHAR(20) DEFAULT 'project' CHECK (subdomain_type IN ('username', 'project')),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

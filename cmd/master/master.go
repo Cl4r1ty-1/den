@@ -12,6 +12,7 @@ import (
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
+	"github.com/den/internal/dns"
 	"github.com/den/internal/handlers"
 	"github.com/den/internal/ssh"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,14 @@ func Run() error {
 	if err := database.RunMigrations(db); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
+
+	dnsService := dns.NewService()
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := dnsService.RebuildRoutesFromDatabase(db.DB); err != nil {
+			log.Printf("failed to sync caddy routes: %v", err)
+		}
+	}()
 
 	authService := auth.NewService(db)
 	
@@ -116,7 +125,6 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	{
 		apiGroup.POST("/nodes/register", h.APIRegisterNode)
 		apiGroup.POST("/nodes/heartbeat", h.APINodeHeartbeat)
-		apiGroup.GET("/traefik/config", h.TraefikConfig)
 	}
 	
 	apiProtected := r.Group("/api")
