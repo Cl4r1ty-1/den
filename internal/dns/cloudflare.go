@@ -38,7 +38,7 @@ func NewCloudflareService() *CloudflareService {
 	return &CloudflareService{
 		apiToken: os.Getenv("CLOUDFLARE_API_TOKEN"),
 		zoneID:   os.Getenv("CLOUDFLARE_ZONE_ID"),
-		baseURL:  "https://api.cloudflare.com/v4",
+		baseURL:  "https://api.cloudflare.com/client/v4",
 	}
 }
 
