@@ -163,6 +163,51 @@
             font-weight: 600;
         }
         
+        .subdomain-type {
+            font-size: 0.8rem;
+            color: #888;
+            background: #e0e0e0;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            margin-right: 0.5rem;
+        }
+        
+        .subdomain-port {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 0.2rem;
+        }
+        
+        .subdomain-form {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #eee;
+        }
+        
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .radio-group input[type="radio"] {
+            margin-right: 0.5rem;
+        }
+        
+        #subdomain-preview {
+            display: block;
+            color: #888;
+            font-style: italic;
+            margin-top: 0.3rem;
+            font-size: 0.9rem;
+        }
+        
         .form-group {
             margin: 1rem 0;
         }
@@ -270,8 +315,14 @@
                     {{range .subdomains}}
                     <div class="subdomain-item">
                         <div>
+                            {{if eq .SubdomainType "username"}}
                             <div class="subdomain-url">{{.Subdomain}}.hack.kim</div>
-                            <div> -> port {{.TargetPort}}</div>
+                            <span class="subdomain-type">username subdomain</span>
+                            {{else}}
+                            <div class="subdomain-url">{{.Subdomain}}.{{$.user.Username}}.hack.kim</div>
+                            <span class="subdomain-type">project subdomain</span>
+                            {{end}}
+                            <div class="subdomain-port"> -> port {{.TargetPort}}</div>
                         </div>
                         <button class="button danger" onclick="deleteSubdomain('{{.ID}}')">delete</button>
                     </div>
@@ -281,20 +332,35 @@
                 </div>
                 
                 {{if .container}}
-                <div class="form-group">
-                    <label for="subdomain">create new subdomain:</label>
-                    <input type="text" id="subdomain" placeholder="myproject">
+                <div class="subdomain-form">
+                    <h3>create new subdomain</h3>
+                    
+                    <div class="form-group">
+                        <label>subdomain type:</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="subdomain_type" value="username" id="type-username"> username ({{.user.Username}}.hack.kim)</label>
+                            <label><input type="radio" name="subdomain_type" value="project" id="type-project" checked> project (myapp.{{.user.Username}}.hack.kim)</label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="subdomain">subdomain name:</label>
+                        <input type="text" id="subdomain" placeholder="myproject">
+                        <small id="subdomain-preview">preview: myproject.{{.user.Username}}.hack.kim</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="port">target port (from your allocated ports):</label>
+                        <select id="port">
+                            <option value="">select a port</option>
+                            {{range .container.AllocatedPorts}}
+                            <option value="{{.}}">{{.}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    
+                    <button class="button" onclick="createSubdomain()">create subdomain</button>
                 </div>
-                <div class="form-group">
-                    <label for="port">target port:</label>
-                    <select id="port">
-                        <option value="">select a port</option>
-                        {{range .container.AllocatedPorts}}
-                        <option value="{{.}}">{{.}}</option>
-                        {{end}}
-                    </select>
-                </div>
-                <button class="button" onclick="createSubdomain()">create subdomain</button>
                 {{else}}
                 <p>create an environment first to manage subdomains</p>
                 {{end}}
@@ -329,9 +395,15 @@
         function createSubdomain() {
             const subdomain = document.getElementById('subdomain').value;
             const port = parseInt(document.getElementById('port').value);
+            const subdomainType = document.querySelector('input[name="subdomain_type"]:checked').value;
             
             if (!subdomain || !port) {
                 alert('please fill in both subdomain and port.');
+                return;
+            }
+            
+            if (subdomainType === 'username' && subdomain !== '{{.user.Username}}') {
+                alert('username subdomain must be your username: {{.user.Username}}');
                 return;
             }
             
@@ -342,7 +414,8 @@
                 },
                 body: JSON.stringify({
                     subdomain: subdomain,
-                    target_port: port
+                    target_port: port,
+                    subdomain_type: subdomainType
                 })
             })
             .then(response => response.json())
@@ -350,7 +423,7 @@
                 if (data.error) {
                     alert('error: ' + data.error);
                 } else {
-                    alert('subdomain created successfully!');
+                    alert('subdomain created successfully: ' + data.subdomain);
                     location.reload();
                 }
             })
@@ -358,6 +431,28 @@
                 alert('Error: ' + error);
             });
         }
+        
+        function updatePreview() {
+            const subdomain = document.getElementById('subdomain').value || 'myproject';
+            const subdomainType = document.querySelector('input[name="subdomain_type"]:checked').value;
+            const preview = document.getElementById('subdomain-preview');
+            
+            if (subdomainType === 'username') {
+                preview.textContent = 'preview: {{.user.Username}}.hack.kim';
+                document.getElementById('subdomain').placeholder = '{{.user.Username}}';
+            } else {
+                preview.textContent = 'preview: ' + subdomain + '.{{.user.Username}}.hack.kim';
+                document.getElementById('subdomain').placeholder = 'myproject';
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('subdomain').addEventListener('input', updatePreview);
+            document.querySelectorAll('input[name="subdomain_type"]').forEach(radio => {
+                radio.addEventListener('change', updatePreview);
+            });
+            updatePreview();
+        });
         
         function deleteSubdomain(id) {
             if (confirm('Delete this subdomain?')) {

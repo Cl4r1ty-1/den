@@ -175,7 +175,7 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 		}
 	}
 	rows, err := h.db.Query(`
-		SELECT id, subdomain, target_port, is_active, created_at
+		SELECT id, subdomain, target_port, subdomain_type, is_active, created_at
 		FROM subdomains WHERE user_id = $1
 		ORDER BY created_at DESC
 	`, user.ID)
@@ -189,7 +189,7 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 	for rows.Next() {
 		var subdomain models.Subdomain
 		err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
-			&subdomain.IsActive, &subdomain.CreatedAt)
+			&subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt)
 		if err != nil {
 			continue
 		}
