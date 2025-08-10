@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 	
@@ -18,7 +17,6 @@ import (
 	"github.com/den/internal/dns"
 	"github.com/den/internal/models"
 	"github.com/gin-gonic/gin"
-	"github.com/lib/pq"
 )
 
 type Handler struct {
