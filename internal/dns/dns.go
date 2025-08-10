@@ -69,7 +69,9 @@ func (s *Service) CreateDNSRecord(subdomain, nodeIP string, externalPort int) er
 	fmt.Printf("creating dns record: %s -> %s:%d\n", fullDomain, nodeIP, externalPort)
 	
 	publicIP := s.getPublicIP()
+	fmt.Printf("creating cloudflare DNS record: %s -> %s\n", fullDomain, publicIP)
 	if err := s.cloudflare.CreateRecord(fullDomain, publicIP); err != nil {
+		fmt.Printf("cloudflare API error: %v\n", err)
 		return fmt.Errorf("failed to create cloudflare record: %w", err)
 	}
 	
