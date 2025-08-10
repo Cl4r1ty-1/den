@@ -59,37 +59,19 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
         },
 	}
 
-    routeJSON, err := json.Marshal(route)
-    if err != nil {
-        return fmt.Errorf("failed to marshal route: %w", err)
-    }
+	routeJSON, err := json.Marshal(route)
+	if err != nil {
+		return fmt.Errorf("failed to marshal route: %w", err)
+	}
 
-    patchOps := []map[string]interface{}{
-        {
-            "op":   "add",
-            "path": "/apps/http/servers/srv0/routes/0",
-            "value": json.RawMessage(routeJSON),
-        },
-    }
-    body, err := json.Marshal(patchOps)
-    if err != nil {
-        return fmt.Errorf("failed to marshal json patch: %w", err)
-    }
-
-    configURL := fmt.Sprintf("%s/config", c.adminURL)
-    fmt.Printf("making api call to caddy: PATCH %s\n", configURL)
-    req, err := http.NewRequest("PATCH", configURL, bytes.NewBuffer(body))
-    if err != nil {
-        return fmt.Errorf("failed to create PATCH request: %w", err)
-    }
-    req.Header.Set("Content-Type", "application/json-patch+json")
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        return fmt.Errorf("failed to apply json patch: %w", err)
-    }
-    defer resp.Body.Close()
+	fmt.Printf("making api call to caddy: POST %s/config/apps/http/servers/srv0/routes\n", c.adminURL)
+	
+	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
+    resp, err := http.Post(url, "application/json", bytes.NewBuffer(routeJSON))
+	if err != nil {
+		return fmt.Errorf("failed to add route: %w", err)
+	}
+	defer resp.Body.Close()
 
     if resp.StatusCode >= 400 {
         var bodyBytes []byte
@@ -97,10 +79,10 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
             bodyBytes, _ = io.ReadAll(resp.Body)
         }
         return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
-    }
+	}
 
-    fmt.Printf("route added successfully! %s is now live\n", subdomain)
-    return nil
+	fmt.Printf("route added successfully! %s is now live\n", subdomain)
+	return nil
 }
 
 func (c *CaddyService) RemoveSubdomain(subdomain string) error {
