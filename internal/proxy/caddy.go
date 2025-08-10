@@ -1,12 +1,13 @@
 package proxy
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"strings"
+    "bytes"
+    "database/sql"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "strings"
 )
 
 type CaddyService struct {
@@ -66,14 +67,18 @@ func (c *CaddyService) AddSubdomain(subdomain, targetHost string, targetPort int
 	fmt.Printf("making api call to caddy: POST %s/config/apps/http/servers/srv0/routes\n", c.adminURL)
 	
 	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", c.adminURL)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(routeJSON))
+    resp, err := http.Post(url, "application/json", bytes.NewBuffer(routeJSON))
 	if err != nil {
 		return fmt.Errorf("failed to add route: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("caddy API error: %s", resp.Status)
+    if resp.StatusCode >= 400 {
+        var bodyBytes []byte
+        if resp.Body != nil {
+            bodyBytes, _ = io.ReadAll(resp.Body)
+        }
+        return fmt.Errorf("caddy API error: %s - %s", resp.Status, string(bodyBytes))
 	}
 
 	fmt.Printf("route added successfully! %s is now live\n", subdomain)
