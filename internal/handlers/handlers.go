@@ -163,6 +163,7 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 			pq.Array(&container.AllocatedPorts), &container.CreatedAt, &container.UpdatedAt,
 		)
 		if err != nil {
+			fmt.Printf("error loading container for user %d: %v\n", user.ID, err)
 			container = nil
 		}
 	}
