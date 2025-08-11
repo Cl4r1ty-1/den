@@ -11,6 +11,8 @@ import (
 	"html/template"
 	"syscall"
 	"time"
+    "crypto/rand"
+    "encoding/hex"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
@@ -84,7 +86,21 @@ func Run() error {
 
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+    r := gin.New()
+    r.Use(func(c *gin.Context) {
+        b := make([]byte, 8)
+        if _, err := rand.Read(b); err == nil {
+            rid := hex.EncodeToString(b)
+            c.Set("request_id", rid)
+            c.Writer.Header().Set("X-Request-ID", rid)
+        }
+        start := time.Now()
+        c.Next()
+        status := c.Writer.Status()
+        rid, _ := c.Get("request_id")
+        log.Printf("rid=%v %s %s status=%d duration=%s", rid, c.Request.Method, c.FullPath(), status, time.Since(start))
+    })
+    r.Use(gin.Recovery())
 
     r.SetFuncMap(template.FuncMap{
         "toJson": func(v interface{}) template.JS {

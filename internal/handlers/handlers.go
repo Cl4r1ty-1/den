@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 	"strings"
     "unicode"
+	"log"
 	
 	"github.com/lib/pq"
 
@@ -466,6 +468,7 @@ func (h *Handler) ContainerStatus(c *gin.Context) {
 
 func (h *Handler) CreateContainer(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
+    requestID := c.GetString("request_id")
 	
 	if user.ContainerID != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "container already exists"})
@@ -474,16 +477,18 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 	
 	var nodeID int
 	var nodeHostname string
-	err := h.db.QueryRow(`
+    err := h.db.QueryRow(`
 		SELECT id, hostname FROM nodes 
 		WHERE is_online = true 
 		ORDER BY id LIMIT 1
 	`).Scan(&nodeID, &nodeHostname)
 	if err != nil {
+        log.Printf("rid=%s CreateContainer: no available nodes: %v", requestID, err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available nodes"})
 		return
 	}
 	slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    log.Printf("rid=%s CreateContainer: selected node id=%d host=%s url=%s for user id=%d username=%s", requestID, nodeID, nodeHostname, slaveURL, user.ID, user.Username)
 	payload := map[string]interface{}{
 		"user_id":   user.ID,
 		"username":  user.Username,
@@ -491,24 +496,29 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 	
 	data, err := json.Marshal(payload)
 	if err != nil {
+        log.Printf("rid=%s CreateContainer: marshal payload error: %v", requestID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
 		return
 	}
 	
 	resp, err := http.Post(slaveURL+"/api/containers", "application/json", bytes.NewBuffer(data))
 	if err != nil {
+        log.Printf("rid=%s CreateContainer: POST to slave failed: %v", requestID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to communicate with slave node"})
 		return
 	}
 	defer resp.Body.Close()
 	
 	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to create container"})
+        body, _ := io.ReadAll(resp.Body)
+        log.Printf("rid=%s CreateContainer: slave returned status=%d body=%s", requestID, resp.StatusCode, string(body))
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to create container"})
 		return
 	}
 	
 	var containerInfo map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&containerInfo); err != nil {
+        log.Printf("rid=%s CreateContainer: decode container info error: %v", requestID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode container info"})
 		return
 	}
@@ -524,21 +534,24 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 		}
 	}
 	
-	_, err = h.db.Exec(`
+    _, err = h.db.Exec(`
 		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports)
 		VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9, $10)
 	`, containerID, user.ID, nodeID, containerInfo["Name"], 
 		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15, pq.Array(allocatedPorts))
 	if err != nil {
+        log.Printf("rid=%s CreateContainer: DB insert error for container %s: %v", requestID, containerID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
 		return
 	}
-	_, err = h.db.Exec("UPDATE users SET container_id = $1 WHERE id = $2", containerID, user.ID)
+    _, err = h.db.Exec("UPDATE users SET container_id = $1 WHERE id = $2", containerID, user.ID)
 	if err != nil {
+        log.Printf("rid=%s CreateContainer: DB update user %d with container %s failed: %v", requestID, user.ID, containerID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
 		return
 	}
 	
+    log.Printf("rid=%s CreateContainer: success container_id=%s ip=%v ssh_port=%v ports=%v", requestID, containerID, containerInfo["IP"], containerInfo["SSHPort"], allocatedPorts)
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Container created successfully",
 		"container_id":   containerID,
