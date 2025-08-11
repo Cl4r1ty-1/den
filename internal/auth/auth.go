@@ -137,18 +137,22 @@ func (s *Service) getSlackUser(token string) (*SlackUser, error) {
 
 func (s *Service) createOrUpdateUser(slackUser *SlackUser) (*models.User, error) {
 	var user models.User
+    var tosQuestions pq.Int64Array
     err := s.db.QueryRow(`
         SELECT id, slack_id, username, email, display_name, is_admin, container_id, 
                ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
-		FROM users WHERE slack_id = $1
-	`, slackUser.ID).Scan(
+        FROM users WHERE slack_id = $1
+    `, slackUser.ID).Scan(
         &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
-	)
+        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQuestions, &user.CreatedAt, &user.UpdatedAt,
+    )
+    user.TOSQuestions = make([]int, len(tosQuestions))
+    for i, v := range tosQuestions { user.TOSQuestions[i] = int(v) }
 
 	if err == sql.ErrNoRows {
 		username := generateUsername(slackUser.Name)
 		
+        var tos pq.Int64Array
         err = s.db.QueryRow(`
             INSERT INTO users (slack_id, username, email, display_name)
             VALUES ($1, $2, $3, $4)
@@ -156,8 +160,10 @@ func (s *Service) createOrUpdateUser(slackUser *SlackUser) (*models.User, error)
                       ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
         `, slackUser.ID, username, slackUser.Email, slackUser.RealName).Scan(
             &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-            &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
+            &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tos, &user.CreatedAt, &user.UpdatedAt,
         )
+        user.TOSQuestions = make([]int, len(tos))
+        for i, v := range tos { user.TOSQuestions[i] = int(v) }
 		
 		if err != nil {
 			return nil, err
@@ -195,16 +201,19 @@ func (s *Service) CreateSession(userID int) (string, error) {
 
 func (s *Service) GetUserBySession(sessionID string) (*models.User, error) {
 	var user models.User
+    var tosQ pq.Int64Array
     err := s.db.QueryRow(`
         SELECT u.id, u.slack_id, u.username, u.email, u.display_name, u.is_admin, 
                u.container_id, u.ssh_public_key, u.agreed_to_tos, u.agreed_to_privacy, u.tos_questions, u.created_at, u.updated_at
-		FROM users u
-		JOIN sessions s ON u.id = s.user_id
-		WHERE s.id = $1 AND s.expires_at > NOW()
-	`, sessionID).Scan(
+        FROM users u
+        JOIN sessions s ON u.id = s.user_id
+        WHERE s.id = $1 AND s.expires_at > NOW()
+    `, sessionID).Scan(
         &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
-	)
+        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQ, &user.CreatedAt, &user.UpdatedAt,
+    )
+    user.TOSQuestions = make([]int, len(tosQ))
+    for i, v := range tosQ { user.TOSQuestions[i] = int(v) }
 
 	if err != nil {
 		return nil, err
