@@ -14,8 +14,20 @@ type User struct {
 	ContainerID  *string   `json:"container_id" db:"container_id"`
 	SSHPassword  *string   `json:"-" db:"ssh_password"`
 	SSHPublicKey *string   `json:"ssh_public_key" db:"ssh_public_key"`
+    AgreedToTOS     bool      `json:"agreed_to_tos" db:"agreed_to_tos"`
+    AgreedToPrivacy bool      `json:"agreed_to_privacy" db:"agreed_to_privacy"`
+    TOSQuestions    []int     `json:"tos_questions" db:"tos_questions"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type Question struct {
+    ID            int       `json:"id" db:"id"`
+    Prompt        string    `json:"prompt" db:"prompt"`
+    CorrectAnswer string    `json:"-" db:"correct_answer"`
+    IsActive      bool      `json:"is_active" db:"is_active"`
+    CreatedAt     time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type Node struct {

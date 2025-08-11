@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"strings"
+    "unicode"
 	
 	"github.com/lib/pq"
 
@@ -49,9 +51,241 @@ func (h *Handler) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user", user)
-		c.Next()
+        c.Set("user", user)
+        if !user.AgreedToTOS || !user.AgreedToPrivacy {
+            if c.FullPath() != "/aup" && c.FullPath() != "/aup/accept" {
+                c.Redirect(http.StatusFound, "/aup")
+                c.Abort()
+                return
+            }
+        }
+        c.Next()
 	}
+}
+
+func (h *Handler) AUPPage(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    questions, _ := h.ensureAssignedQuestions(user.ID, 3)
+    c.HTML(http.StatusOK, "aup.html", gin.H{
+        "title": "terms & privacy",
+        "user":  user,
+        "quiz_questions": questions,
+    })
+}
+
+type quizAnswer struct { ID int `json:"id"`; Answer string `json:"answer"` }
+
+func (h *Handler) AUPAccept(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    var req struct {
+        AcceptTOS     bool `json:"accept_tos"`
+        AcceptPrivacy bool `json:"accept_privacy"`
+        Answers       []quizAnswer `json:"answers"`
+    }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+        return
+    }
+    if !req.AcceptTOS || !req.AcceptPrivacy {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "you must accept both the terms and privacy policy"})
+        return
+    }
+    if err := h.validateQuizAnswers(user.ID, req.Answers); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+    if _, err := h.db.Exec(`UPDATE users SET agreed_to_tos = TRUE, agreed_to_privacy = TRUE, updated_at = NOW() WHERE id = $1`, user.ID); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save acceptance"})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) AUPValidate(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    var req struct { Answers []quizAnswer `json:"answers"` }
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+        return
+    }
+    if err := h.validateQuizAnswers(user.ID, req.Answers); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) ensureAssignedQuestions(userID int, n int) ([]models.Question, error) {
+    var assignedIDs pq.Int64Array
+    if err := h.db.QueryRow(`SELECT tos_questions FROM users WHERE id = $1`, userID).Scan(&assignedIDs); err != nil {
+        return nil, err
+    }
+    ids := make([]int, 0, len(assignedIDs))
+    for _, v := range assignedIDs { ids = append(ids, int(v)) }
+
+    if len(ids) == 0 {
+        rows, err := h.db.Query(`SELECT id, prompt FROM questions WHERE is_active = TRUE ORDER BY random() LIMIT $1`, n)
+        if err != nil { return nil, err }
+        defer rows.Close()
+        var newIDs []int
+        var questions []models.Question
+        for rows.Next() {
+            var q models.Question
+            if err := rows.Scan(&q.ID, &q.Prompt); err != nil { continue }
+            newIDs = append(newIDs, q.ID)
+            questions = append(questions, q)
+        }
+        if len(newIDs) > 0 {
+            int64IDs := make([]int64, len(newIDs)); for i, v := range newIDs { int64IDs[i] = int64(v) }
+            _, _ = h.db.Exec(`UPDATE users SET tos_questions = $1, updated_at = NOW() WHERE id = $2`, pq.Array(int64IDs), userID)
+        }
+        return questions, nil
+    }
+    rows, err := h.db.Query(`SELECT id, prompt FROM questions WHERE id = ANY($1) AND is_active = TRUE`, pq.Array(ids))
+    if err != nil { return nil, err }
+    defer rows.Close()
+    var questions []models.Question
+    for rows.Next() {
+        var q models.Question
+        if err := rows.Scan(&q.ID, &q.Prompt); err != nil { continue }
+        questions = append(questions, q)
+    }
+    return questions, nil
+}
+
+func (h *Handler) validateQuizAnswers(userID int, answers []quizAnswer) error {
+    if len(answers) == 0 {
+        return fmt.Errorf("please answer the questions")
+    }
+    var assigned pq.Int64Array
+    if err := h.db.QueryRow(`SELECT tos_questions FROM users WHERE id = $1`, userID).Scan(&assigned); err != nil {
+        return fmt.Errorf("failed to load assigned questions")
+    }
+    if len(assigned) == 0 {
+        return fmt.Errorf("no questions assigned; please reload the page")
+    }
+    assignedSet := map[int]struct{}{}
+    for _, v := range assigned { assignedSet[int(v)] = struct{}{} }
+    ids := make([]int, 0, len(assigned))
+    for k := range assignedSet { ids = append(ids, k) }
+    rows, err := h.db.Query(`SELECT id, correct_answer FROM questions WHERE id = ANY($1) AND is_active = TRUE`, pq.Array(ids))
+    if err != nil { return fmt.Errorf("failed to load questions") }
+    defer rows.Close()
+    correct := map[int]string{}
+    for rows.Next() {
+        var id int; var ans string
+        if err := rows.Scan(&id, &ans); err == nil {
+            correct[id] = strings.TrimSpace(strings.ToLower(ans))
+        }
+    }
+    if len(correct) == 0 {
+        return fmt.Errorf("no active questions available")
+    }
+    incorrect := []int{}
+    provided := map[int]string{}
+    for _, a := range answers { provided[a.ID] = a.Answer }
+    for id, want := range correct {
+        got, ok := provided[id]
+        if !ok || !isFuzzyCorrect(got, want) { incorrect = append(incorrect, id) }
+    }
+    if len(incorrect) > 0 {
+        return fmt.Errorf("one or more answers are incorrect")
+    }
+    return nil
+}
+func isFuzzyCorrect(got, want string) bool {
+    g := normalizeAnswer(got)
+    w := normalizeAnswer(want)
+    if g == "" || w == "" {
+        return false
+    }
+    if g == w { return true }
+    if extractDigits(g) == extractDigits(w) && extractDigits(w) != "" {
+        return true
+    }
+    if len(w) <= 6 && (strings.Contains(g, w) || strings.Contains(w, g)) {
+        return true
+    }
+    for _, alt := range synonymsFor(w) {
+        if g == alt || (len(alt) <= 6 && strings.Contains(g, alt)) {
+            return true
+        }
+    }
+    dist := levenshtein(g, w)
+    maxErr := 1
+    if len(w) >= 8 { maxErr = 2 }
+    if len(w) >= 14 { maxErr = 3 }
+    return dist <= maxErr
+}
+
+func normalizeAnswer(s string) string {
+    s = strings.ToLower(strings.TrimSpace(s))
+    b := make([]rune, 0, len(s))
+    for _, r := range s {
+        if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
+            b = append(b, r)
+        }
+    }
+    out := strings.Join(strings.Fields(string(b)), " ")
+    out = strings.ReplaceAll(out, " day", "")
+    out = strings.ReplaceAll(out, " days", "")
+    out = strings.ReplaceAll(out, " cookie", "")
+    out = strings.ReplaceAll(out, " attack", "")
+    return out
+}
+
+func extractDigits(s string) string {
+    var b []rune
+    for _, r := range s {
+        if r >= '0' && r <= '9' { b = append(b, r) }
+    }
+    return string(b)
+}
+
+func synonymsFor(norm string) []string {
+    m := map[string][]string{
+        "google cloud": {"gcp", "google cloud platform"},
+        "denial of service": {"dos", "ddos", "denial of service attack"},
+        "computer misuse act 1990": {"uk computer misuse act", "computer misuse act"},
+        "ico": {"information commissioners office", "information commissioner's office"},
+        "session": {"session cookie"},
+        "no": {"not allowed", "forbidden"},
+        "yes": {"allowed", "permitted"},
+        "13": {"thirteen"},
+        "14": {"fourteen"},
+    }
+    if v, ok := m[norm]; ok { return v }
+    return nil
+}
+func levenshtein(a, b string) int {
+    ra := []rune(a)
+    rb := []rune(b)
+    na := len(ra)
+    nb := len(rb)
+    if na == 0 { return nb }
+    if nb == 0 { return na }
+    prev := make([]int, nb+1)
+    curr := make([]int, nb+1)
+    for j := 0; j <= nb; j++ { prev[j] = j }
+    for i := 1; i <= na; i++ {
+        curr[0] = i
+        for j := 1; j <= nb; j++ {
+            cost := 0
+            if ra[i-1] != rb[j-1] { cost = 1 }
+            del := prev[j] + 1
+            ins := curr[j-1] + 1
+            sub := prev[j-1] + cost
+            curr[j] = min3(del, ins, sub)
+        }
+        copy(prev, curr)
+    }
+    return prev[nb]
+}
+
+func min3(a, b, c int) int {
+    if a < b { if a < c { return a } ; return c }
+    if b < c { return b }
+    return c
 }
 
 func (h *Handler) RequireAdmin() gin.HandlerFunc {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/den/internal/database"
 	"github.com/den/internal/models"
+	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -136,27 +137,27 @@ func (s *Service) getSlackUser(token string) (*SlackUser, error) {
 
 func (s *Service) createOrUpdateUser(slackUser *SlackUser) (*models.User, error) {
 	var user models.User
-	err := s.db.QueryRow(`
-		SELECT id, slack_id, username, email, display_name, is_admin, container_id, 
-			   ssh_public_key, created_at, updated_at
+    err := s.db.QueryRow(`
+        SELECT id, slack_id, username, email, display_name, is_admin, container_id, 
+               ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
 		FROM users WHERE slack_id = $1
 	`, slackUser.ID).Scan(
-		&user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.CreatedAt, &user.UpdatedAt,
+        &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
+        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
 		username := generateUsername(slackUser.Name)
 		
-		err = s.db.QueryRow(`
-			INSERT INTO users (slack_id, username, email, display_name)
-			VALUES ($1, $2, $3, $4)
-			RETURNING id, slack_id, username, email, display_name, is_admin, container_id,
-					  ssh_public_key, created_at, updated_at
-		`, slackUser.ID, username, slackUser.Email, slackUser.RealName).Scan(
-			&user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-			&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.CreatedAt, &user.UpdatedAt,
-		)
+        err = s.db.QueryRow(`
+            INSERT INTO users (slack_id, username, email, display_name)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, slack_id, username, email, display_name, is_admin, container_id,
+                      ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
+        `, slackUser.ID, username, slackUser.Email, slackUser.RealName).Scan(
+            &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
+            &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
+        )
 		
 		if err != nil {
 			return nil, err
@@ -194,15 +195,15 @@ func (s *Service) CreateSession(userID int) (string, error) {
 
 func (s *Service) GetUserBySession(sessionID string) (*models.User, error) {
 	var user models.User
-	err := s.db.QueryRow(`
-		SELECT u.id, u.slack_id, u.username, u.email, u.display_name, u.is_admin, 
-			   u.container_id, u.ssh_public_key, u.created_at, u.updated_at
+    err := s.db.QueryRow(`
+        SELECT u.id, u.slack_id, u.username, u.email, u.display_name, u.is_admin, 
+               u.container_id, u.ssh_public_key, u.agreed_to_tos, u.agreed_to_privacy, u.tos_questions, u.created_at, u.updated_at
 		FROM users u
 		JOIN sessions s ON u.id = s.user_id
 		WHERE s.id = $1 AND s.expires_at > NOW()
 	`, sessionID).Scan(
-		&user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
-		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.CreatedAt, &user.UpdatedAt,
+        &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
+        &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, pq.Array(&user.TOSQuestions), &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err != nil {

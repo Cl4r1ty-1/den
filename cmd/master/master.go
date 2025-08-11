@@ -97,6 +97,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	userGroup := r.Group("/user")
 	userGroup.Use(h.RequireAuth())
 	{
+		r.GET("/aup", h.AUPPage)
+		r.POST("/aup/accept", h.AUPAccept)
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
 		userGroup.POST("/container/create", h.CreateContainer)
@@ -106,6 +108,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/api/subdomains", h.GetUserSubdomains)
 		userGroup.GET("/ssh-setup", h.SSHSetup)
 		userGroup.POST("/ssh-setup", h.ConfigureSSH)
+		userGroup.POST("/aup/validate", h.AUPValidate)
 	}
 
 	adminGroup := r.Group("/admin")

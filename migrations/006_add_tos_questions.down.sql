@@ -1,0 +1,2 @@
+ALTER TABLE users DROP COLUMN IF EXISTS tos_questions;
+DROP TABLE IF EXISTS questions;
