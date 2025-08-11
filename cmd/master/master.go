@@ -2,11 +2,13 @@ package master
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"html/template"
 	"syscall"
 	"time"
 
@@ -84,7 +86,13 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
-	r.LoadHTMLGlob("web/templates/*")
+    r.SetFuncMap(template.FuncMap{
+        "toJson": func(v interface{}) template.JS {
+            b, _ := json.Marshal(v)
+            return template.JS(string(b))
+        },
+    })
+    r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
 
 	h := handlers.New(authService, db)
