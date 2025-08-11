@@ -146,6 +146,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		adminGroup.DELETE("/nodes/:id", h.DeleteNode)
 		adminGroup.GET("/users", h.UserManagement)
 		adminGroup.DELETE("/users/:id", h.DeleteUser)
+		adminGroup.DELETE("/users/:id/container", h.AdminDeleteUserContainer)
 	}
 
 	apiGroup := r.Group("/api")

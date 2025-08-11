@@ -437,7 +437,8 @@
                                 <td>${user.is_admin ? 'yes' : 'no'}</td>
                                 <td>${new Date(user.created_at).toLocaleDateString()}</td>
                                 <td class="actions">
-                                    <button class="button btn-small" style="background: #dc3545;" onclick="deleteUser(${user.id})">Delete</button>
+                                    <button class="button btn-small secondary" onclick="deleteUserContainer(${user.id})" ${!user.container_id ? 'disabled' : ''}>delete container</button>
+                                    <button class="button btn-small" style="background: #dc3545;" onclick="deleteUser(${user.id})">delete user</button>
                                 </td>
                             `;
                             tbody.appendChild(row);
@@ -559,6 +560,22 @@
                 .catch(error => {
                     alert('Error: ' + error);
                 });
+            }
+        }
+
+        function deleteUserContainer(userId) {
+            if (confirm('delete this user\'s container?')) {
+                fetch('/admin/users/' + userId + '/container', { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('error: ' + data.error);
+                    } else {
+                        alert('container deleted');
+                        loadUsers();
+                    }
+                })
+                .catch(err => alert('error: ' + err));
             }
         }
         loadNodes();

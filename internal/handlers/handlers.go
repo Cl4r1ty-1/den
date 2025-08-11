@@ -912,6 +912,49 @@ func (h *Handler) UserManagement(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"users": users})
 }
 
+func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
+    requestID := c.GetString("request_id")
+    userID, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+        return
+    }
+
+    var containerID, nodeHostname string
+    err = h.db.QueryRow(`
+        SELECT c.id, n.hostname
+        FROM users u
+        JOIN containers c ON u.container_id = c.id
+        JOIN nodes n ON c.node_id = n.id
+        WHERE u.id = $1
+    `, userID).Scan(&containerID, &nodeHostname)
+    if err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "user has no container"})
+        return
+    }
+
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    req, _ := http.NewRequest(http.MethodDelete, slaveURL+"/api/containers/"+containerID, nil)
+    client := &http.Client{Timeout: 30 * time.Second}
+    resp, derr := client.Do(req)
+    if derr != nil {
+        log.Printf("rid=%s AdminDeleteUserContainer: slave delete request failed: %v", requestID, derr)
+        c.JSON(http.StatusBadGateway, gin.H{"error": "failed to communicate with node"})
+        return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        log.Printf("rid=%s AdminDeleteUserContainer: slave delete returned %d: %s", requestID, resp.StatusCode, string(body))
+        c.JSON(http.StatusBadGateway, gin.H{"error": "node failed to delete container"})
+        return
+    }
+    _, _ = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
+    _, _ = h.db.Exec("UPDATE users SET container_id = NULL, updated_at = NOW() WHERE id = $1", userID)
+
+    c.JSON(http.StatusOK, gin.H{"message": "container deleted"})
+}
+
 func (h *Handler) DeleteUser(c *gin.Context) {
     requestID := c.GetString("request_id")
     userID, err := strconv.Atoi(c.Param("id"))
