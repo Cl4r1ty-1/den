@@ -913,19 +913,70 @@ func (h *Handler) UserManagement(c *gin.Context) {
 }
 
 func (h *Handler) DeleteUser(c *gin.Context) {
-	userID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-		return
-	}
+    requestID := c.GetString("request_id")
+    userID, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+        return
+    }
 
-	_, err = h.db.Exec("DELETE FROM users WHERE id = $1", userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
-		return
-	}
+    var username string
+    var containerID *string
+    err = h.db.QueryRow("SELECT username, container_id FROM users WHERE id = $1", userID).Scan(&username, &containerID)
+    if err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+        return
+    }
+    rows, err := h.db.Query(`SELECT subdomain, subdomain_type FROM subdomains WHERE user_id = $1`, userID)
+    if err == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var sub string
+            var subType string
+            if err := rows.Scan(&sub, &subType); err == nil {
+                if derr := h.dns.DeleteDNSRecord(sub, username, subType); derr != nil {
+                    log.Printf("rid=%s DeleteUser: failed DNS/Caddy cleanup for %s type=%s: %v", requestID, sub, subType, derr)
+                }
+            }
+        }
+    }
+    if containerID != nil && *containerID != "" {
+        var nodeHostname string
+        err := h.db.QueryRow(`
+            SELECT n.hostname FROM nodes n
+            JOIN containers c ON c.node_id = n.id
+            WHERE c.id = $1
+        `, *containerID).Scan(&nodeHostname)
+        if err != nil {
+            log.Printf("rid=%s DeleteUser: could not find node for container %s: %v", requestID, *containerID, err)
+        } else {
+            slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+            req, _ := http.NewRequest(http.MethodDelete, slaveURL+"/api/containers/"+*containerID, nil)
+            client := &http.Client{Timeout: 30 * time.Second}
+            resp, derr := client.Do(req)
+            if derr != nil {
+                log.Printf("rid=%s DeleteUser: slave delete request failed: %v", requestID, derr)
+                c.JSON(http.StatusBadGateway, gin.H{"error": "failed to delete container on node"})
+                return
+            }
+            defer resp.Body.Close()
+            if resp.StatusCode != http.StatusOK {
+                body, _ := io.ReadAll(resp.Body)
+                log.Printf("rid=%s DeleteUser: slave delete returned %d: %s", requestID, resp.StatusCode, string(body))
+                c.JSON(http.StatusBadGateway, gin.H{"error": "node failed to delete container"})
+                return
+            }
+            _, _ = h.db.Exec("DELETE FROM containers WHERE id = $1", *containerID)
+            _, _ = h.db.Exec("UPDATE users SET container_id = NULL WHERE id = $1", userID)
+        }
+    }
+    _, err = h.db.Exec("DELETE FROM users WHERE id = $1", userID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+        return
+    }
 
-	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+    c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }
 
 func (h *Handler) APICreateContainer(c *gin.Context) {
