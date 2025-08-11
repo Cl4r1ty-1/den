@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"syscall"
 	"time"
+	"bytes"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
@@ -52,7 +53,21 @@ func Run() error {
 		}
 	}()
 
-	router := setupRouter(authService, db)
+    router := setupRouter(authService, db)
+    go func() {
+        ticker := time.NewTicker(5 * time.Minute)
+        defer ticker.Stop()
+        time.Sleep(5 * time.Second)
+        for {
+            if err := enforceAUPCompliance(db); err != nil {
+                log.Printf("aup enforcement error: %v", err)
+            }
+            select {
+            case <-ticker.C:
+                continue
+            }
+        }
+    }()
 
 	srv := &http.Server{
 		Addr:    ":8080",
@@ -105,8 +120,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	userGroup := r.Group("/user")
 	userGroup.Use(h.RequireAuth())
 	{
-		r.GET("/aup", h.AUPPage)
-		r.POST("/aup/accept", h.AUPAccept)
+		userGroup.GET("/aup", h.AUPPage)
+		userGroup.POST("/aup/accept", h.AUPAccept)
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
 		userGroup.POST("/container/create", h.CreateContainer)
@@ -148,4 +163,56 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	}
 
 	return r
+}
+
+func enforceAUPCompliance(db *database.DB) error {
+    rows, err := db.DB.Query(`
+        SELECT u.id, u.username, c.id AS container_id, n.hostname
+        FROM users u
+        JOIN containers c ON u.container_id = c.id
+        JOIN nodes n ON c.node_id = n.id
+        WHERE (u.agreed_to_tos = FALSE OR u.agreed_to_privacy = FALSE)
+          AND c.status = 'running'
+    `)
+    if err != nil {
+        return err
+    }
+    defer rows.Close()
+
+    type item struct{ userID int; username, containerID, hostname string }
+    var items []item
+    for rows.Next() {
+        var it item
+        if err := rows.Scan(&it.userID, &it.username, &it.containerID, &it.hostname); err == nil {
+            items = append(items, it)
+        }
+    }
+    if len(items) == 0 {
+        return nil
+    }
+
+    client := &http.Client{Timeout: 15 * time.Second}
+    for _, it := range items {
+        url := fmt.Sprintf("http://%s:8081/api/control/containers/%s", it.hostname, it.containerID)
+        body := map[string]string{"action": "stop"}
+        b, _ := json.Marshal(body)
+        req, _ := http.NewRequest("POST", url, bytes.NewBuffer(b))
+        req.Header.Set("Content-Type", "application/json")
+        resp, err := client.Do(req)
+        if err != nil {
+            log.Printf("failed to stop container %s on %s: %v", it.containerID, it.hostname, err)
+            continue
+        }
+        resp.Body.Close()
+        if resp.StatusCode >= 400 {
+            log.Printf("slave returned %d for %s", resp.StatusCode, it.containerID)
+            continue
+        }
+        if _, err := db.DB.Exec(`UPDATE containers SET status = 'stopped', updated_at = NOW() WHERE id = $1`, it.containerID); err != nil {
+            log.Printf("failed to update DB for %s: %v", it.containerID, err)
+        } else {
+            log.Printf("stopped container %s for user %s", it.containerID, it.username)
+        }
+    }
+    return nil
 }

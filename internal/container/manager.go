@@ -285,6 +285,22 @@ func (m *Manager) DeleteContainer(containerID string) error {
 	return nil
 }
 
+func (m *Manager) StopContainer(containerID string) error {
+    stopCmd := exec.Command("lxc", "stop", containerID)
+    if err := stopCmd.Run(); err != nil {
+        return fmt.Errorf("failed to stop container: %w", err)
+    }
+    return nil
+}
+
+func (m *Manager) StartContainer(containerID string) error {
+    startCmd := exec.Command("lxc", "start", containerID)
+    if err := startCmd.Run(); err != nil {
+        return fmt.Errorf("failed to start container: %w", err)
+    }
+    return nil
+}
+
 func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) error {
 	authorizedKeysPath := fmt.Sprintf("/home/%s/.ssh/authorized_keys", username)
 	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-c", 

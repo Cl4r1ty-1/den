@@ -238,7 +238,8 @@ func (s *Slave) startAPIServer() {
 	
 	// fuck this shit i'm out
 	mux.HandleFunc("/api/containers", s.handleCreateContainer)
-	mux.HandleFunc("/api/containers/", s.handleContainerOperations)
+    mux.HandleFunc("/api/containers/", s.handleContainerOperations)
+    mux.HandleFunc("/api/control/containers/", s.handleControlContainer)
 	mux.HandleFunc("/api/ports", s.handlePortMapping)
 	mux.HandleFunc("/api/ssh", s.handleSSHSetup)
 	
@@ -306,6 +307,39 @@ func (s *Slave) handleContainerOperations(w http.ResponseWriter, r *http.Request
 		}
 		w.WriteHeader(http.StatusOK)
 	}
+}
+func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
+    parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
+    if len(parts) < 5 {
+        http.Error(w, "invalid path", http.StatusBadRequest)
+        return
+    }
+    containerID := parts[4]
+    if r.Method != http.MethodPost {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req struct { Action string `json:"action"` }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "invalid request", http.StatusBadRequest)
+        return
+    }
+    switch strings.ToLower(req.Action) {
+    case "stop", "pause":
+        if err := s.manager.StopContainer(containerID); err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+    case "start", "resume":
+        if err := s.manager.StartContainer(containerID); err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+    default:
+        http.Error(w, "unknown action", http.StatusBadRequest)
+        return
+    }
+    w.WriteHeader(http.StatusOK)
 }
 
 func (s *Slave) handlePortMapping(w http.ResponseWriter, r *http.Request) {

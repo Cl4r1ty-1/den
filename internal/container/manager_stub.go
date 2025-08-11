@@ -47,6 +47,14 @@ func (m *Manager) DeleteContainer(containerID string) error {
 	return fmt.Errorf("container operations not supported on master node")
 }
 
+func (m *Manager) StopContainer(containerID string) error {
+    return fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) StartContainer(containerID string) error {
+    return fmt.Errorf("container operations not supported on master node")
+}
+
 func (m *Manager) SetupSSHAccess(containerName, username, publicKey string) error {
 	return fmt.Errorf("container operations not supported on master node")
 }
