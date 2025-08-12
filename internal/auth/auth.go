@@ -149,16 +149,19 @@ func (s *Service) createOrUpdateUser(slackUser *SlackUser) (*models.User, error)
     user.TOSQuestions = make([]int, len(tosQuestions))
     for i, v := range tosQuestions { user.TOSQuestions[i] = int(v) }
 
-	if err == sql.ErrNoRows {
-		username := generateUsername(slackUser.Name)
-		
+    if err == sql.ErrNoRows {
+        username := generateUsername(slackUser.Name)
+        displayName := slackUser.RealName
+        if displayName == "" {
+            displayName = slackUser.Name
+        }
         var tos pq.Int64Array
         err = s.db.QueryRow(`
             INSERT INTO users (slack_id, username, email, display_name)
             VALUES ($1, $2, $3, $4)
             RETURNING id, slack_id, username, email, display_name, is_admin, container_id,
                       ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
-        `, slackUser.ID, username, slackUser.Email, slackUser.RealName).Scan(
+        `, slackUser.ID, username, slackUser.Email, displayName).Scan(
             &user.ID, &user.SlackID, &user.Username, &user.Email, &user.DisplayName,
             &user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tos, &user.CreatedAt, &user.UpdatedAt,
         )
@@ -170,11 +173,15 @@ func (s *Service) createOrUpdateUser(slackUser *SlackUser) (*models.User, error)
 		}
 	} else if err != nil {
 		return nil, err
-	} else {
-		_, err = s.db.Exec(`
-			UPDATE users SET email = $1, display_name = $2, updated_at = NOW()
-			WHERE id = $3
-		`, slackUser.Email, slackUser.RealName, user.ID)
+    } else {
+        displayName := slackUser.RealName
+        if displayName == "" {
+            displayName = slackUser.Name
+        }
+        _, err = s.db.Exec(`
+            UPDATE users SET email = $1, display_name = $2, updated_at = NOW()
+            WHERE id = $3
+        `, slackUser.Email, displayName, user.ID)
 		
 		if err != nil {
 			return nil, err

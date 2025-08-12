@@ -242,9 +242,27 @@
             cursor: pointer;
             color: #666;
         }
+
+        #toast-container { position: fixed; right: 1rem; bottom: 1rem; display:flex; flex-direction:column; gap:.5rem; z-index: 2000; }
+        .toast { background:#111827; color:#fff; padding:.75rem 1rem; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.2); opacity:0.98; }
+        .toast.success { background:#065f46; }
+        .toast.error { background:#7f1d1d; }
     </style>
 </head>
 <body>
+    <div id="toast-container"></div>
+    <div id="confirm-backdrop" class="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); align-items:center; justify-content:center;">
+      <div class="modal-content" style="background:#fff; width:100%; max-width:480px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.15); padding:1.25rem; position:relative;">
+        <button class="close" onclick="closeConfirm()">&times;</button>
+        <h3 id="confirm-title" style="margin:0 0 .75rem 0; color:#333">confirm</h3>
+        <div id="confirm-body" style="color:#555"></div>
+        <div style="display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem;">
+          <button class="button secondary" onclick="closeConfirm()">cancel</button>
+          <button class="button" id="confirm-btn">confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="toast-container"></div>
     <div class="header">
         <div class="logo">den admin </div>
         <div>
@@ -415,7 +433,7 @@
                     }
                 })
                 .catch(error => {
-                    console.error('erorr loading nodes:', error);
+                    showToast('error loading nodes: ' + error, 'error');
                 });
         }
         
@@ -446,7 +464,7 @@
                     }
                 })
                 .catch(error => {
-                    console.error('error loading users:', error);
+                    showToast('error loading users: ' + error, 'error');
                 });
         }
         
@@ -458,10 +476,7 @@
             const cpu = parseInt(document.getElementById('node-cpu').value);
             const storage = parseInt(document.getElementById('node-storage').value);
             
-            if (!name || !hostname) {
-                alert('fill in name and hostname, seriously. what are you, blind?');
-                return;
-            }
+            if (!name || !hostname) { showToast('fill in name and hostname', 'error'); return; }
             
             const payload = {
                 name: name,
@@ -484,99 +499,91 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.error) {
-                    alert('Error: ' + data.error);
-                } else {
-                    alert('node created. token: ' + data.token);
-                    hideModal('add-node-modal');
-                    loadNodes();
-                    
-                    document.getElementById('node-name').value = '';
-                    document.getElementById('node-hostname').value = '';
-                    document.getElementById('node-public-hostname').value = '';
-                    document.getElementById('node-memory').value = '4096';
-                    document.getElementById('node-cpu').value = '4';
-                    document.getElementById('node-storage').value = '15';
-                }
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast('node created. token: ' + data.token, 'success');
+                hideModal('add-node-modal');
+                loadNodes();
+                document.getElementById('node-name').value = '';
+                document.getElementById('node-hostname').value = '';
+                document.getElementById('node-public-hostname').value = '';
+                document.getElementById('node-memory').value = '4096';
+                document.getElementById('node-cpu').value = '4';
+                document.getElementById('node-storage').value = '15';
             })
-            .catch(error => {
-                alert('error: ' + error);
-            });
+            .catch(error => showToast(String(error), 'error'));
         }
         
         function generateToken(nodeId) {
-            if (confirm('gen a new token for this node?old token will be invalidated.')) {
-                fetch('/admin/nodes/' + nodeId + '/token', {
-                    method: 'GET'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('error: ' + data.error);
-                    } else {
-                        alert('new token generated: ' + data.token);
-                    }
-                })
-                .catch(error => {
-                    alert('error: ' + error);
-                });
-            }
+            openConfirm({
+                title: 'generate new token',
+                message: 'generate a new token for this node? old token will be invalidated.',
+                onConfirm: () => {
+                    fetch('/admin/nodes/' + nodeId + '/token', { method: 'GET' })
+                    .then(r => r.json())
+                    .then(data => { if (data.error) { showToast(data.error, 'error'); return; } closeConfirm(); showToast('new token: ' + data.token, 'success'); })
+                    .catch(e => showToast(String(e), 'error'));
+                }
+            });
         }
         
         function deleteNode(nodeId) {
-            if (confirm('delete this node? All containers on this node will be lost!')) {
-                fetch('/admin/nodes/' + nodeId, {
-                    method: 'DELETE'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('error: ' + data.error);
-                    } else {
-                        alert('node deleted successfully!');
-                        loadNodes();
-                    }
-                })
-                .catch(error => {
-                    alert('error: ' + error);
-                });
-            }
+            openConfirm({
+                title: 'delete node',
+                message: 'delete this node? all containers on this node will be lost!',
+                onConfirm: () => {
+                    fetch('/admin/nodes/' + nodeId, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => { if (d.error) { showToast(d.error, 'error'); return; } closeConfirm(); showToast('node deleted', 'success'); loadNodes(); })
+                    .catch(e => showToast(String(e), 'error'));
+                }
+            });
         }
         
         function deleteUser(userId) {
-            if (confirm('delete this user? their container and data will be lost (gg no re)')) {
-                fetch('/admin/users/' + userId, {
-                    method: 'DELETE'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('error: ' + data.error);
-                    } else {
-                        alert('user deleted successfully!');
-                        loadUsers();
-                    }
-                })
-                .catch(error => {
-                    alert('Error: ' + error);
-                });
-            }
+            openConfirm({
+                title: 'delete user',
+                message: 'delete this user? their container and data will be lost.',
+                onConfirm: () => {
+                    fetch('/admin/users/' + userId, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => { if (d.error) { showToast(d.error, 'error'); return; } closeConfirm(); showToast('user deleted', 'success'); loadUsers(); })
+                    .catch(e => showToast(String(e), 'error'));
+                }
+            });
         }
 
         function deleteUserContainer(userId) {
-            if (confirm('delete this user\'s container?')) {
-                fetch('/admin/users/' + userId + '/container', { method: 'DELETE' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('error: ' + data.error);
-                    } else {
-                        alert('container deleted');
-                        loadUsers();
-                    }
-                })
-                .catch(err => alert('error: ' + err));
-            }
+            openConfirm({
+                title: 'delete container',
+                message: 'delete this user\'s container?',
+                onConfirm: () => {
+                    fetch('/admin/users/' + userId + '/container', { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => { if (d.error) { showToast(d.error, 'error'); return; } closeConfirm(); showToast('container deleted', 'success'); loadUsers(); })
+                    .catch(err => showToast(String(err), 'error'));
+                }
+            });
+        }
+        let _confirmHandler = null;
+        function openConfirm({ title, message, onConfirm }) {
+            document.getElementById('confirm-title').textContent = title || 'confirm';
+            document.getElementById('confirm-body').textContent = message || '';
+            _confirmHandler = onConfirm || null;
+            const btn = document.getElementById('confirm-btn');
+            btn.onclick = function() { if (_confirmHandler) _confirmHandler(); };
+            document.getElementById('confirm-backdrop').style.display = 'flex';
+        }
+        function closeConfirm() {
+            document.getElementById('confirm-backdrop').style.display = 'none';
+            _confirmHandler = null;
+        }
+        function showToast(message, type) {
+            const cont = document.getElementById('toast-container');
+            const t = document.createElement('div');
+            t.className = 'toast' + (type ? ' ' + type : '');
+            t.textContent = message;
+            cont.appendChild(t);
+            setTimeout(() => { t.remove(); }, 4000);
         }
         loadNodes();
     </script>

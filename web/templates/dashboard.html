@@ -242,9 +242,32 @@
             font-family: monospace;
             margin: 1rem 0;
         }
+        .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,0.35); display:none; }
+        .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding: 1rem; z-index:1000; }
+        .modal-content { background:#fff; width:100%; max-width:520px; border-radius:12px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding:1.25rem; position:relative; }
+        .modal h3 { margin: 0 0 .75rem 0; }
+        .modal-actions { display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem; }
+        .close { position:absolute; right:.75rem; top:.5rem; background:none; border:0; font-size:1.5rem; color:#666; cursor:pointer; }
+        #toast-container { position: fixed; right: 1rem; bottom: 1rem; display:flex; flex-direction:column; gap:.5rem; z-index: 2000; }
+        .toast { background:#111827; color:#fff; padding:.75rem 1rem; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.2); opacity:0.98; }
+        .toast.success { background:#065f46; }
+        .toast.error { background:#7f1d1d; }
     </style>
 </head>
 <body>
+    <div id="toast-container"></div>
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="close" onclick="closeModal()">&times;</button>
+            <h3 id="modal-title"></h3>
+            <div id="modal-body"></div>
+            <div class="modal-actions">
+                <button class="button secondary" onclick="closeModal()">cancel</button>
+                <button class="button" id="modal-confirm-btn">confirm</button>
+            </div>
+        </div>
+    </div>
     <div class="header">
         <div class="logo">den</div>
         <div class="user-info">
@@ -293,6 +316,9 @@
                                 {{else}}
                                     none
                                 {{end}}
+                                {{if .container}}
+                                    &nbsp; <button class="button secondary" onclick="getNewPort()">get new port</button>
+                                {{end}}
                             </span>
                         </div>
                     </div>
@@ -306,7 +332,7 @@
                     <div class="status none">no environment</div>
                     <p>you don't have an environment yet. create one to get started</p>
                     <br>
-                    <button class="button" onclick="createContainer()">Create Container</button>
+                    <button class="button" onclick="confirmCreateContainer()">Create Container</button>
                 {{end}}
             </div>
             <div class="card">
@@ -324,7 +350,7 @@
                             {{end}}
                             <div class="subdomain-port"> -> port {{.TargetPort}}</div>
                         </div>
-                        <button class="button danger" onclick="deleteSubdomain('{{.ID}}')">delete</button>
+                        <button class="button danger" onclick="confirmDeleteSubdomain('{{.ID}}')">delete</button>
                     </div>
                     {{else}}
                     <p>no subdomains configured yet.</p>
@@ -369,27 +395,23 @@
     </div>
     
     <script>
-        function createContainer() {
-            if (confirm('create your personal environment? this will take a few minutes.')) {
-                fetch('/user/container/create', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('error: ' + data.error);
-                    } else {
-                        alert('container creation started! please refresh the page in a few minutes.');
+        function confirmCreateContainer() {
+            openModal({
+                title: 'create container',
+                html: '<p>create your personal environment? this will take a few minutes.</p>',
+                confirmText: 'create',
+                onConfirm: () => {
+                    fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { showToast(d.error, 'error'); return; }
+                        closeModal();
+                        showToast('container creation started. refresh in a few minutes.', 'success');
                         location.reload();
-                    }
-                })
-                .catch(error => {
-                    alert('error: ' + error);
-                });
-            }
+                    })
+                    .catch(e => showToast(String(e), 'error'));
+                }
+            });
         }
         
         function createSubdomain() {
@@ -397,14 +419,10 @@
             const port = parseInt(document.getElementById('port').value);
             const subdomainType = document.querySelector('input[name="subdomain_type"]:checked').value;
             
-            if (!subdomain || !port) {
-                alert('please fill in both subdomain and port.');
-                return;
-            }
+            if (!subdomain || !port) { showToast('please fill in both subdomain and port', 'error'); return; }
             
             if (subdomainType === 'username' && subdomain !== '{{.user.Username}}') {
-                alert('username subdomain must be your username: {{.user.Username}}');
-                return;
+                showToast('username subdomain must be your username: {{.user.Username}}', 'error'); return;
             }
             
             fetch('/user/subdomains', {
@@ -420,16 +438,32 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.error) {
-                    alert('error: ' + data.error);
-                } else {
-                    alert('subdomain created successfully: ' + data.subdomain);
-                    location.reload();
-                }
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast('subdomain created', 'success');
+                location.reload();
             })
-            .catch(error => {
-                alert('Error: ' + error);
-            });
+            .catch(error => showToast(String(error), 'error'));
+        }
+
+        function getNewPort() {
+            fetch('/user/container/ports/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast('allocated port: ' + data.port, 'success');
+                const sel = document.getElementById('port');
+                if (sel) {
+                    const opt = document.createElement('option');
+                    opt.value = data.port;
+                    opt.textContent = data.port;
+                    sel.appendChild(opt);
+                }
+                location.reload();
+            })
+            .catch(err => showToast(String(err), 'error'));
         }
         
         function updatePreview() {
@@ -454,24 +488,47 @@
             updatePreview();
         });
         
-        function deleteSubdomain(id) {
-            if (confirm('Delete this subdomain?')) {
-                fetch('/user/subdomains/' + id, {
-                    method: 'DELETE'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('Error: ' + data.error);
-                    } else {
-                        alert('Subdomain deleted successfully!');
+        function confirmDeleteSubdomain(id) {
+            openModal({
+                title: 'delete subdomain',
+                html: '<p>are you sure you want to delete this subdomain?</p>',
+                confirmText: 'delete',
+                onConfirm: () => {
+                    fetch('/user/subdomains/' + id, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { showToast(d.error, 'error'); return; }
+                        closeModal();
+                        showToast('subdomain deleted', 'success');
                         location.reload();
-                    }
-                })
-                .catch(error => {
-                    alert('Error: ' + error);
-                });
-            }
+                    })
+                    .catch(e => showToast(String(e), 'error'));
+                }
+            });
+        }
+        let modalConfirmHandler = null;
+        function openModal({ title, html, confirmText, onConfirm }) {
+            document.getElementById('modal-title').textContent = title || '';
+            document.getElementById('modal-body').innerHTML = html || '';
+            const btn = document.getElementById('modal-confirm-btn');
+            btn.textContent = confirmText || 'confirm';
+            modalConfirmHandler = onConfirm || null;
+            btn.onclick = function() { if (modalConfirmHandler) modalConfirmHandler(); };
+            document.getElementById('modal-backdrop').style.display = 'block';
+            document.getElementById('modal').style.display = 'flex';
+        }
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('modal-backdrop').style.display = 'none';
+            modalConfirmHandler = null;
+        }
+        function showToast(message, type) {
+            const cont = document.getElementById('toast-container');
+            const t = document.createElement('div');
+            t.className = 'toast' + (type ? ' ' + type : '');
+            t.textContent = message;
+            cont.appendChild(t);
+            setTimeout(() => { t.remove(); }, 4000);
         }
     </script>
 </body>

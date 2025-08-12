@@ -12,9 +12,36 @@
     .tos, .privacy { background:#fafafa; border:1px solid #eee; padding:1rem; border-radius:8px; max-height: 300px; overflow:auto; }
     .actions { margin-top: 1rem; display:flex; align-items:center; gap:.75rem; }
     .button { background: linear-gradient(135deg,#667eea 0%, #764ba2 100%); color:#fff; border:0; padding:.75rem 1.25rem; border-radius:8px; cursor:pointer; font-weight:600; }
+    .modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,0.35); display:none; }
+    .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding: 1rem; }
+    .modal-content { background:#fff; width:100%; max-width:640px; border-radius:12px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding:1.25rem; position:relative; }
+    .modal h3 { margin: 0 0 .75rem 0; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem; }
+    .close { position:absolute; right:.75rem; top:.5rem; background:none; border:0; font-size:1.5rem; color:#666; cursor:pointer; }
+    .button.secondary { background:#6c757d; }
+
+    /* Toasts */
+    #toast-container { position: fixed; right: 1rem; bottom: 1rem; display:flex; flex-direction:column; gap:.5rem; z-index: 9999; }
+    .toast { background:#111827; color:#fff; padding:.75rem 1rem; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.2); opacity:0.98; }
+    .toast.success { background:#065f46; }
+    .toast.error { background:#7f1d1d; }
+    .hidden { display:none; }
   </style>
   </head>
   <body>
+    <div id="toast-container"></div>
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="modal" class="modal">
+      <div class="modal-content">
+        <button class="close" onclick="closeModal()">&times;</button>
+        <h3 id="modal-title"></h3>
+        <div id="modal-body"></div>
+        <div class="modal-actions">
+          <button class="button secondary" onclick="closeModal()">cancel</button>
+          <button class="button" id="modal-confirm-btn">submit</button>
+        </div>
+      </div>
+    </div>
     <div class="card">
       <h1>hi {{.user.DisplayName}}</h1>
       <p>please accept our terms and privacy policy to continue.</p>
@@ -237,27 +264,76 @@ Website: https://ico.org.uk/
 
     <script>
       let quizQuestions = {{ toJson .quiz_questions }};
+
+      function showToast(message, type) {
+        const cont = document.getElementById('toast-container');
+        const t = document.createElement('div');
+        t.className = 'toast' + (type ? ' ' + type : '');
+        t.textContent = message;
+        cont.appendChild(t);
+        setTimeout(() => { t.remove(); }, 4000);
+      }
+
+      let modalConfirmHandler = null;
+      function openModal({ title, html, confirmText, onConfirm }) {
+        document.getElementById('modal-title').textContent = title || '';
+        document.getElementById('modal-body').innerHTML = html || '';
+        const btn = document.getElementById('modal-confirm-btn');
+        btn.textContent = confirmText || 'submit';
+        modalConfirmHandler = onConfirm || null;
+        btn.onclick = function() {
+          if (modalConfirmHandler) modalConfirmHandler();
+        };
+        document.getElementById('modal-backdrop').style.display = 'block';
+        document.getElementById('modal').style.display = 'flex';
+      }
+      function closeModal() {
+        document.getElementById('modal').style.display = 'none';
+        document.getElementById('modal-backdrop').style.display = 'none';
+        modalConfirmHandler = null;
+      }
+
       function startQuiz() {
         const tos = document.getElementById('chk-tos').checked;
         const privacy = document.getElementById('chk-privacy').checked;
-        if (!tos || !privacy) { alert('please accept both to continue'); return; }
-        if (!quizQuestions || quizQuestions.length === 0) { alert('no questions assigned, please reload'); return; }
-        const answers = [];
-        let msg = "did you actually read it? well now's the time to prove it:\n\n";
-        quizQuestions.forEach(q => {
-          const a = prompt(msg + q.prompt + "\n\n(type your answer)");
-          if (a !== null) answers.push({ id: q.id, answer: a });
-          msg = "";
+        if (!tos || !privacy) { showToast('please accept both to continue', 'error'); return; }
+        if (!quizQuestions || quizQuestions.length === 0) { showToast('no questions assigned, please reload', 'error'); return; }
+
+        const formHtml = `
+          <p style="margin:.25rem 0 .75rem 0;color:#555">did you actually read it? prove it by answering these:</p>
+          <form id="quiz-form">
+            ${quizQuestions.map(q => `
+              <div class="form-group" style="margin:.75rem 0;">
+                <label style="display:block;font-weight:600;margin-bottom:.25rem">${q.prompt}</label>
+                <input type="text" data-qid="${q.id}" style="width:100%;padding:.6rem;border:1px solid #ddd;border-radius:8px" placeholder="your answer" />
+              </div>
+            `).join('')}
+          </form>
+        `;
+
+        openModal({
+          title: 'quick quiz',
+          html: formHtml,
+          confirmText: 'submit answers',
+          onConfirm: function submitQuiz() {
+            const inputs = document.querySelectorAll('#quiz-form [data-qid]');
+            const answers = [];
+            inputs.forEach(inp => { answers.push({ id: parseInt(inp.getAttribute('data-qid')), answer: inp.value || '' }); });
+            if (answers.some(a => !a.answer.trim())) { showToast('please answer all questions', 'error'); return; }
+            fetch('/user/aup/accept', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accept_tos: true, accept_privacy: true, answers })
+            })
+            .then(r => r.json())
+            .then(d => {
+              if (d.error) { showToast(d.error, 'error'); return; }
+              closeModal();
+              window.location.href = '/user/dashboard';
+            })
+            .catch(e => showToast(String(e), 'error'));
+          }
         });
-        if (answers.length !== quizQuestions.length) { alert('quiz cancelled'); return; }
-        fetch('/user/aup/accept', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accept_tos: true, accept_privacy: true, answers })
-        }).then(r => r.json()).then(d => {
-          if (d.error) { alert('error: ' + d.error); return; }
-          window.location.href = '/user/dashboard';
-        }).catch(e => alert('error: ' + e));
       }
     </script>
   </body>

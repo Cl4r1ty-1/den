@@ -241,6 +241,7 @@ func (s *Slave) startAPIServer() {
     mux.HandleFunc("/api/containers/", s.handleContainerOperations)
     mux.HandleFunc("/api/control/containers/", s.handleControlContainer)
 	mux.HandleFunc("/api/ports", s.handlePortMapping)
+    mux.HandleFunc("/api/ports/new", s.handleAllocateNewPort)
 	mux.HandleFunc("/api/ssh", s.handleSSHSetup)
 	
 	server := &http.Server{
@@ -366,6 +367,32 @@ func (s *Slave) handlePortMapping(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Slave) handleAllocateNewPort(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req struct {
+        ContainerID string `json:"container_id"`
+        Protocol    string `json:"protocol"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "invalid request", http.StatusBadRequest)
+        return
+    }
+    if req.Protocol == "" { req.Protocol = "tcp" }
+    port, err := s.manager.FindAvailablePort()
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    if err := s.manager.MapPort(req.ContainerID, port, port, req.Protocol); err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    json.NewEncoder(w).Encode(map[string]int{"port": port})
 }
 
 func (s *Slave) handleSSHSetup(w http.ResponseWriter, r *http.Request) {

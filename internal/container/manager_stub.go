@@ -74,3 +74,7 @@ func (m *Manager) UnmapPort(containerID string, externalPort int, protocol strin
 func (m *Manager) GetRandomPort() (int, error) {
 	return 0, fmt.Errorf("container operations not supported on master node")
 }
+
+func (m *Manager) FindAvailablePort() (int, error) {
+    return 0, fmt.Errorf("container operations not supported on master node")
+}

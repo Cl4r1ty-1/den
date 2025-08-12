@@ -155,9 +155,15 @@
         .hidden {
             display: none;
         }
+
+        #toast-container { position: fixed; right: 1rem; bottom: 1rem; display:flex; flex-direction:column; gap:.5rem; z-index: 2000; }
+        .toast { background:#111827; color:#fff; padding:.75rem 1rem; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.2); opacity:0.98; }
+        .toast.success { background:#065f46; }
+        .toast.error { background:#7f1d1d; }
     </style>
 </head>
 <body>
+    <div id="toast-container"></div>
     <div class="header">
         <div class="logo">den</div>
         <div>
@@ -270,15 +276,10 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.error) {
-                    alert('error: ' + data.error);
-                } else {
-                    alert('password set successfully. you can now ssh into to your environment.');
-                }
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast('password set successfully. you can now ssh into your environment.', 'success');
             })
-            .catch(error => {
-                alert('error: ' + error);
-            });
+            .catch(error => showToast(String(error), 'error'));
         }
         
         function savePublicKey() {
@@ -305,15 +306,19 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.error) {
-                    alert('error: ' + data.error);
-                } else {
-                    alert('pubkey set successfully. you can now ssh into to your environment.');
-                }
+                if (data.error) { showToast(data.error, 'error'); return; }
+                showToast('pubkey set successfully. you can now ssh into your environment.', 'success');
             })
-            .catch(error => {
-                alert('error: ' + error);
-            });
+            .catch(error => showToast(String(error), 'error'));
+        }
+
+        function showToast(message, type) {
+            const cont = document.getElementById('toast-container');
+            const t = document.createElement('div');
+            t.className = 'toast' + (type ? ' ' + type : '');
+            t.textContent = message;
+            cont.appendChild(t);
+            setTimeout(() => { t.remove(); }, 4000);
         }
     </script>
 </body>

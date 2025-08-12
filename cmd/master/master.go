@@ -126,6 +126,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
 		userGroup.POST("/container/create", h.CreateContainer)
+		userGroup.POST("/container/ports/new", h.GetNewPort)
 		userGroup.GET("/subdomains", h.SubdomainManagement)
 		userGroup.POST("/subdomains", h.CreateSubdomain)
 		userGroup.DELETE("/subdomains/:id", h.DeleteSubdomain)

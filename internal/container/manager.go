@@ -84,12 +84,6 @@ func (m *Manager) portInSlice(port int, ports []int) bool {
 
 func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, error) {
 	containerName := fmt.Sprintf("den-%s", username)
-	
-	allocatedPorts, err := m.allocateRandomPorts()
-	if err != nil {
-		return nil, fmt.Errorf("failed to allocate ports: %w", err)
-	}
-	
 	cmd := exec.Command("lxc", "launch", "ubuntu:22.04", containerName)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
@@ -110,18 +104,13 @@ func (m *Manager) CreateContainer(userID int, username string) (*ContainerInfo, 
 		return nil, fmt.Errorf("failed to setup user: %w", err)
 	}
 	
-	if err := m.setupPortForwarding(containerName, allocatedPorts); err != nil {
-		exec.Command("lxc", "delete", containerName, "--force").Run()
-		return nil, fmt.Errorf("failed to setup port forwarding: %w", err)
-	}
-	
 	info, err := m.getContainerInfo(containerName)
 	if err != nil {
 		exec.Command("lxc", "delete", containerName, "--force").Run()
 		return nil, fmt.Errorf("failed to get container info: %w", err)
 	}
 	
-	info.AllocatedPorts = allocatedPorts
+    info.AllocatedPorts = []int{}
 	
 	return info, nil
 }
@@ -355,6 +344,20 @@ func (m *Manager) setupPortForwarding(containerName string, allocatedPorts []int
 		}
 	}
 	return nil
+}
+
+func (m *Manager) FindAvailablePort() (int, error) {
+    const minPort = 20000
+    const maxPort = 65535
+    attempts := 2000
+    for attempts > 0 {
+        port := rand.Intn(maxPort-minPort+1) + minPort
+        if m.isPortAvailable(port) {
+            return port, nil
+        }
+        attempts--
+    }
+    return 0, fmt.Errorf("no available port found")
 }
 func (m *Manager) MapPort(containerID string, internalPort, externalPort int, protocol string) error {
 	if protocol == "" {

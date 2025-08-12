@@ -450,20 +450,58 @@ func (h *Handler) ContainerStatus(c *gin.Context) {
 	}
 
 	var container models.Container
-	err := h.db.QueryRow(`
-		SELECT id, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports
-		FROM containers WHERE id = $1
-	`, *user.ContainerID).Scan(
-		&container.ID, &container.Status, &container.IPAddress,
-		&container.SSHPort, &container.MemoryMB, &container.CPUCores, &container.StorageGB,
-		pq.Array(&container.AllocatedPorts),
-	)
+    err := h.db.QueryRow(`
+        SELECT id, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports
+        FROM containers WHERE id = $1
+    `, *user.ContainerID).Scan(
+        &container.ID, &container.Status, &container.IPAddress,
+        &container.SSHPort, &container.MemoryMB, &container.CPUCores, &container.StorageGB,
+        pq.Array(&container.AllocatedPorts),
+    )
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 
 	c.JSON(http.StatusOK, container)
+}
+
+func (h *Handler) GetNewPort(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "no container"})
+        return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id = n.id WHERE c.id = $1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+        return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    payload := map[string]string{"container_id": *user.ContainerID}
+    body, _ := json.Marshal(payload)
+    resp, err := http.Post(slaveURL+"/api/ports/new", "application/json", bytes.NewBuffer(body))
+    if err != nil {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"})
+        return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        c.JSON(http.StatusBadGateway, gin.H{"error": string(b)})
+        return
+    }
+    var res struct{ Port int `json:"port"` }
+    if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "invalid node response"})
+        return
+    }
+    _, err = h.db.Exec(`UPDATE containers SET allocated_ports = array_append(allocated_ports, $1), updated_at = NOW() WHERE id = $2`, res.Port, *user.ContainerID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist port"})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"port": res.Port})
 }
 
 func (h *Handler) CreateContainer(c *gin.Context) {
@@ -523,20 +561,11 @@ func (h *Handler) CreateContainer(c *gin.Context) {
 		return
 	}
 	containerID := containerInfo["ID"].(string)
-	var allocatedPorts []int
-	if portsInterface, exists := containerInfo["AllocatedPorts"]; exists {
-		if portsSlice, ok := portsInterface.([]interface{}); ok {
-			for _, port := range portsSlice {
-				if portFloat, ok := port.(float64); ok {
-					allocatedPorts = append(allocatedPorts, int(portFloat))
-				}
-			}
-		}
-	}
+    var allocatedPorts []int
 	
     _, err = h.db.Exec(`
-		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports)
-		VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9, $10)
+        INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports)
+        VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9, $10)
 	`, containerID, user.ID, nodeID, containerInfo["Name"], 
 		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15, pq.Array(allocatedPorts))
 	if err != nil {
@@ -920,14 +949,14 @@ func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
         return
     }
 
-    var containerID, nodeHostname string
+    var containerID, nodeHostname, username string
     err = h.db.QueryRow(`
-        SELECT c.id, n.hostname
+        SELECT c.id, n.hostname, u.username
         FROM users u
         JOIN containers c ON u.container_id = c.id
         JOIN nodes n ON c.node_id = n.id
         WHERE u.id = $1
-    `, userID).Scan(&containerID, &nodeHostname)
+    `, userID).Scan(&containerID, &nodeHostname, &username)
     if err != nil {
         c.JSON(http.StatusNotFound, gin.H{"error": "user has no container"})
         return
@@ -949,6 +978,19 @@ func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
         c.JSON(http.StatusBadGateway, gin.H{"error": "node failed to delete container"})
         return
     }
+    if rows, qerr := h.db.Query(`SELECT subdomain, subdomain_type FROM subdomains WHERE user_id = $1`, userID); qerr == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var sub, subType string
+            if err := rows.Scan(&sub, &subType); err == nil {
+                if derr := h.dns.DeleteDNSRecord(sub, username, subType); derr != nil {
+                    log.Printf("rid=%s AdminDeleteUserContainer: DNS/Caddy cleanup failed for %s type=%s: %v", requestID, sub, subType, derr)
+                }
+            }
+        }
+        _, _ = h.db.Exec("DELETE FROM subdomains WHERE user_id = $1", userID)
+    }
+
     _, _ = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
     _, _ = h.db.Exec("UPDATE users SET container_id = NULL, updated_at = NOW() WHERE id = $1", userID)
 
@@ -1139,12 +1181,14 @@ func (h *Handler) GetUserSubdomains(c *gin.Context) {
 
 func (h *Handler) APIDeleteContainer(c *gin.Context) {
 	containerID := c.Param("id")
-	var nodeHostname string
-	err := h.db.QueryRow(`
-		SELECT n.hostname FROM nodes n
-		JOIN containers c ON c.node_id = n.id
-		WHERE c.id = $1
-	`, containerID).Scan(&nodeHostname)
+    var nodeHostname, username string
+    err := h.db.QueryRow(`
+        SELECT n.hostname, u.username
+        FROM containers c
+        JOIN nodes n ON c.node_id = n.id
+        JOIN users u ON u.id = c.user_id
+        WHERE c.id = $1
+    `, containerID).Scan(&nodeHostname, &username)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
 		return
@@ -1168,7 +1212,21 @@ func (h *Handler) APIDeleteContainer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to delete container"})
 		return
 	}
-	_, err = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
+    if rows, qerr := h.db.Query(`SELECT subdomain, subdomain_type, user_id FROM subdomains WHERE user_id = (SELECT user_id FROM containers WHERE id = $1)`, containerID); qerr == nil {
+        defer rows.Close()
+        var sub, subType string
+        var uid int
+        for rows.Next() {
+            if err := rows.Scan(&sub, &subType, &uid); err == nil {
+                if derr := h.dns.DeleteDNSRecord(sub, username, subType); derr != nil {
+                    fmt.Printf("failed to delete DNS record for %s: %v\n", sub, derr)
+                }
+            }
+        }
+        _, _ = h.db.Exec("DELETE FROM subdomains WHERE user_id = (SELECT user_id FROM containers WHERE id = $1)", containerID)
+    }
+
+    _, err = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove container from database"})
 		return
