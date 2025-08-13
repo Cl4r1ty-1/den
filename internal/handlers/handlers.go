@@ -20,6 +20,7 @@ import (
 	"github.com/den/internal/database"
 	"github.com/den/internal/dns"
 	"github.com/den/internal/models"
+    "github.com/den/internal/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -308,6 +309,59 @@ func (h *Handler) RequireAdmin() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+func (h *Handler) AdminExportUserContainer(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if !user.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+    idStr := c.Param("id")
+    targetUserID, err := strconv.Atoi(idStr)
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+
+    var req struct{ TTLDays int `json:"ttl_days"` }
+    if err := c.ShouldBindJSON(&req); err != nil || req.TTLDays <= 0 || req.TTLDays > 365 {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ttl_days"}); return
+    }
+
+    var containerID, nodeHostname string
+    err = h.db.QueryRow(`SELECT c.id, n.hostname FROM users u JOIN containers c ON u.container_id = c.id JOIN nodes n ON c.node_id = n.id WHERE u.id = $1`, targetUserID).Scan(&containerID, &nodeHostname)
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "user has no container"}); return }
+
+    expiresAt := time.Now().Add(time.Duration(req.TTLDays) * 24 * time.Hour)
+
+    var exportID int
+    objectKey := fmt.Sprintf("exports/%s/%d/%d.tar.zst", containerID, targetUserID, time.Now().Unix())
+    err = h.db.QueryRow(`INSERT INTO exports (user_id, container_id, object_key, status, expires_at, requested_by) VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id`, targetUserID, containerID, objectKey, expiresAt, user.ID).Scan(&exportID)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+
+    r2, err := storage.NewR2ClientFromEnv()
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"}); return }
+    putURL, err := r2.PresignedPut(c, objectKey, 2*time.Hour)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create upload url"}); return }
+
+    _, _ = h.db.Exec(`UPDATE exports SET status='uploading', updated_at=NOW() WHERE id=$1`, exportID)
+
+    slaveURL := fmt.Sprintf("http://%s:8081/api/export", nodeHostname)
+    payload := map[string]string{"container_id": containerID, "put_url": putURL}
+    body, _ := json.Marshal(payload)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(body))
+    if err != nil {
+        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, err.Error())
+        c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, string(b))
+        c.JSON(http.StatusBadGateway, gin.H{"error": "export failed: "+string(b)}); return
+    }
+
+    getURL, err := r2.PresignedGet(c, objectKey, time.Duration(req.TTLDays)*24*time.Hour)
+    if err != nil {
+        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, err.Error())
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create download url"}); return
+    }
+    _, _ = h.db.Exec(`UPDATE exports SET status='complete', updated_at=NOW() WHERE id=$1`, exportID)
+    c.JSON(http.StatusOK, gin.H{"export_id": exportID, "download_url": getURL, "expires_at": expiresAt})
 }
 
 func (h *Handler) RequireNodeAuth() gin.HandlerFunc {

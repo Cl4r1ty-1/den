@@ -456,6 +456,7 @@
                                 <td>${new Date(user.created_at).toLocaleDateString()}</td>
                                 <td class="actions">
                                     <button class="button btn-small secondary" onclick="deleteUserContainer(${user.id})" ${!user.container_id ? 'disabled' : ''}>delete container</button>
+                                    <button class="button btn-small secondary" onclick="openExportModal(${user.id}, '${user.container_id || ''}')" ${!user.container_id ? 'disabled' : ''}>download data</button>
                                     <button class="button btn-small" style="background: #dc3545;" onclick="deleteUser(${user.id})">delete user</button>
                                 </td>
                             `;
@@ -564,10 +565,40 @@
                 }
             });
         }
+
+        function openExportModal(userId, containerId) {
+            if (!containerId) { showToast('no container to export', 'error'); return }
+            const ttlOptions = [1, 7, 14, 30];
+            const select = ttlOptions.map(d => `<option value="${d}">${d} day${d>1?'s':''}</option>`).join('');
+            openConfirm({
+                title: 'export container',
+                message: 'select how long the download should be available:\n\n' + `<select id="ttl-select">${select}</select>`,
+                onConfirm: () => {
+                    const ttl = parseInt(document.getElementById('ttl-select').value || '7');
+                    fetch('/admin/users/' + userId + '/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl_days: ttl }) })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.error) { showToast(d.error, 'error'); return }
+                        closeConfirm();
+                        if (d.download_url) {
+                            openConfirm({
+                                title: 'download ready',
+                                message: 'your export is ready. it expires at: '+ new Date(d.expires_at).toLocaleString() + '<br/><br/>' + `<a href="${d.download_url}" target="_blank">open download link</a>`,
+                                onConfirm: () => { closeConfirm(); }
+                            });
+                        } else {
+                            showToast('export started (id '+d.export_id+'). link will appear when ready', 'success');
+                        }
+                    })
+                    .catch(e => showToast(String(e), 'error'))
+                }
+            });
+            document.getElementById('confirm-body').innerHTML = 'select how long the download should be available:<br/><br/>' + `<select id="ttl-select">${select}</select>`;
+        }
         let _confirmHandler = null;
         function openConfirm({ title, message, onConfirm }) {
             document.getElementById('confirm-title').textContent = title || 'confirm';
-            document.getElementById('confirm-body').textContent = message || '';
+            document.getElementById('confirm-body').innerHTML = (message || '').replace(/\n/g, '<br/>');
             _confirmHandler = onConfirm || null;
             const btn = document.getElementById('confirm-btn');
             btn.onclick = function() { if (_confirmHandler) _confirmHandler(); };

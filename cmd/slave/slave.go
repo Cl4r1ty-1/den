@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+    "io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+    "os/exec"
 	"strings"
 	"syscall"
 	"time"
@@ -240,6 +242,7 @@ func (s *Slave) startAPIServer() {
 	mux.HandleFunc("/api/containers", s.handleCreateContainer)
     mux.HandleFunc("/api/containers/", s.handleContainerOperations)
     mux.HandleFunc("/api/control/containers/", s.handleControlContainer)
+    mux.HandleFunc("/api/export", s.handleExportContainer)
 	mux.HandleFunc("/api/ports", s.handlePortMapping)
     mux.HandleFunc("/api/ports/new", s.handleAllocateNewPort)
 	mux.HandleFunc("/api/ssh", s.handleSSHSetup)
@@ -253,6 +256,33 @@ func (s *Slave) startAPIServer() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("slave api server failed: %v", err)
 	}
+}
+func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+    var req struct {
+        ContainerID string `json:"container_id"`
+        PutURL      string `json:"put_url"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
+    if req.ContainerID == "" || req.PutURL == "" { http.Error(w, "missing fields", http.StatusBadRequest); return }
+
+    snap := "export-" + fmt.Sprint(time.Now().Unix())
+    if err := exec.Command("lxc", "snapshot", req.ContainerID, snap).Run(); err != nil {
+        http.Error(w, "snapshot failed", http.StatusInternalServerError); return
+    }
+    defer exec.Command("lxc", "delete", req.ContainerID+"/"+snap).Run()
+    cmd := exec.Command("bash", "-lc", fmt.Sprintf("lxc export %s/%s - | zstd -T0 -q", req.ContainerID, snap))
+    curl := exec.Command("curl", "-sS", "-X", "PUT", "--upload-file", "-", req.PutURL)
+    pr, pw := io.Pipe()
+    cmd.Stdout = pw
+    curl.Stdin = pr
+    var curlOut bytes.Buffer
+    curl.Stdout = &curlOut
+    if err := cmd.Start(); err != nil { http.Error(w, "export start failed", http.StatusInternalServerError); return }
+    if err := curl.Start(); err != nil { cmd.Process.Kill(); http.Error(w, "upload start failed", http.StatusInternalServerError); return }
+    go func() { cmd.Wait(); pw.Close() }()
+    if err := curl.Wait(); err != nil { http.Error(w, "upload failed", http.StatusInternalServerError); return }
+    w.WriteHeader(http.StatusOK)
 }
 
 func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {

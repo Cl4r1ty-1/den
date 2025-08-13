@@ -18,6 +18,7 @@ import (
 	"github.com/den/internal/database"
 	"github.com/den/internal/dns"
 	"github.com/den/internal/handlers"
+    "github.com/den/internal/storage"
 	"github.com/den/internal/ssh"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -53,8 +54,19 @@ func Run() error {
 			log.Printf("ssh gateway error: %v", err)
 		}
 	}()
-
+    if _, err := storage.NewR2ClientFromEnv(); err != nil {
+        log.Printf("warning: R2 not configured: %v", err)
+    }
     router := setupRouter(authService, db)
+    go func() {
+        ticker := time.NewTicker(30 * time.Minute)
+        defer ticker.Stop()
+        for range ticker.C {
+            if err := cleanupExpiredExports(db); err != nil {
+                log.Printf("export cleanup error: %v", err)
+            }
+        }
+    }()
 
 	srv := &http.Server{
 		Addr:    ":8080",
@@ -84,6 +96,21 @@ func Run() error {
 	return nil
 }
 
+func cleanupExpiredExports(db *database.DB) error {
+    r2, err := storage.NewR2ClientFromEnv()
+    if err != nil { return nil }
+    rows, err := db.Query(`SELECT id, object_key FROM exports WHERE status IN ('complete') AND expires_at < NOW()`)
+    if err != nil { return err }
+    defer rows.Close()
+    for rows.Next() {
+        var id int; var key string
+        if err := rows.Scan(&id, &key); err != nil { continue }
+        _ = r2.DeleteObject(context.Background(), key)
+        _, _ = db.Exec(`UPDATE exports SET status='expired', updated_at=NOW() WHERE id=$1`, id)
+    }
+    return nil
+}
+
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
     r := gin.New()
@@ -111,7 +138,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
     r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
 
-	h := handlers.New(authService, db)
+    h := handlers.New(authService, db)
 
 	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
@@ -148,6 +175,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		adminGroup.GET("/users", h.UserManagement)
 		adminGroup.DELETE("/users/:id", h.DeleteUser)
 		adminGroup.DELETE("/users/:id/container", h.AdminDeleteUserContainer)
+        adminGroup.POST("/users/:id/export", h.AdminExportUserContainer)
 	}
 
 	apiGroup := r.Group("/api")

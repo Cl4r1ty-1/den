@@ -87,3 +87,17 @@ type Session struct {
 	ExpiresAt time.Time `json:"expires_at" db:"expires_at"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
+
+type Export struct {
+    ID          int       `json:"id" db:"id"`
+    UserID      int       `json:"user_id" db:"user_id"`
+    ContainerID string    `json:"container_id" db:"container_id"`
+    ObjectKey   string    `json:"object_key" db:"object_key"`
+    Status      string    `json:"status" db:"status"`
+    SizeBytes   *int64    `json:"size_bytes" db:"size_bytes"`
+    ExpiresAt   time.Time `json:"expires_at" db:"expires_at"`
+    RequestedBy *int      `json:"requested_by" db:"requested_by"`
+    Error       *string   `json:"error" db:"error"`
+    CreatedAt   time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
