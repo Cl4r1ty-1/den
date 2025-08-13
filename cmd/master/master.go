@@ -24,6 +24,8 @@ import (
 	"github.com/den/internal/ssh"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func Run() error {
@@ -190,8 +192,30 @@ func finalizeJob(db *database.DB, jobID int, success bool, errMsg string, result
 }
 
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
-	gin.SetMode(gin.ReleaseMode)
+    gin.SetMode(gin.ReleaseMode)
     r := gin.New()
+    // i have no idea how to use prometheus
+    requestCounter := prometheus.NewCounterVec(
+        prometheus.CounterOpts{Name: "den_http_requests_total", Help: "HTTP requests"},
+        []string{"method","path","status"},
+    )
+    durationHist := prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{Name: "den_http_request_duration_seconds", Help: "HTTP duration", Buckets: prometheus.DefBuckets},
+        []string{"method","path"},
+    )
+    prometheus.MustRegister(requestCounter, durationHist)
+    nodeContainers := prometheus.NewGauge(prometheus.GaugeOpts{Name: "den_master_total_containers", Help: "Total containers across cluster"})
+    prometheus.MustRegister(nodeContainers)
+    go func(){
+        for {
+            var total int
+            db.QueryRow("SELECT COUNT(*) FROM containers").Scan(&total)
+            nodeContainers.Set(float64(total))
+            time.Sleep(15 * time.Second)
+        }
+    }()
+    r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+    r.GET("/healthz", func(c *gin.Context){ c.JSON(http.StatusOK, gin.H{"ok": true}) })
     r.Use(func(c *gin.Context) {
         b := make([]byte, 8)
         if _, err := rand.Read(b); err == nil {
@@ -204,6 +228,10 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
         status := c.Writer.Status()
         rid, _ := c.Get("request_id")
         log.Printf("rid=%v %s %s status=%d duration=%s", rid, c.Request.Method, c.FullPath(), status, time.Since(start))
+        path := c.FullPath()
+        if path == "" { path = c.Request.URL.Path }
+        requestCounter.WithLabelValues(c.Request.Method, path, fmt.Sprintf("%d", status)).Inc()
+        durationHist.WithLabelValues(c.Request.Method, path).Observe(time.Since(start).Seconds())
     })
     r.Use(gin.Recovery())
 

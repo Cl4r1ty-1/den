@@ -1353,7 +1353,7 @@ func (h *Handler) APINodeHeartbeat(c *gin.Context) {
 	var req struct {
 		NodeID     string      `json:"node_id" binding:"required"`
 		NodeToken  string      `json:"node_token" binding:"required"`
-		Containers interface{} `json:"containers"`
+        Containers interface{} `json:"containers"`
 		Timestamp  int64       `json:"timestamp"`
 	}
 	
@@ -1361,14 +1361,20 @@ func (h *Handler) APINodeHeartbeat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	_, err := h.db.Exec(`
-		UPDATE nodes SET is_online = true, last_seen = NOW(), updated_at = NOW() 
-		WHERE token = $1
-	`, req.NodeToken)
+    // Update online + container count
+    // containers may be []object; we just count length
+    count := 0
+    switch v := req.Containers.(type) {
+    case []interface{}:
+        count = len(v)
+    }
+    _, err := h.db.Exec(`
+        UPDATE nodes SET is_online = true, last_seen = NOW(), updated_at = NOW() WHERE token = $1
+    `, req.NodeToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid node token"})
 		return
 	}
 	
-	c.JSON(http.StatusOK, gin.H{"message": "heartbeat received"})
+    c.JSON(http.StatusOK, gin.H{"message": "heartbeat received", "containers": count})
 }

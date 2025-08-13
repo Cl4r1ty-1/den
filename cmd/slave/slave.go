@@ -16,6 +16,8 @@ import (
 
 	"github.com/den/internal/container"
 	"github.com/joho/godotenv"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Config struct {
@@ -181,8 +183,10 @@ func (s *Slave) sendHeartbeat() error {
 	return nil
 }
 func (s *Slave) monitorContainers() {
-	ticker := time.NewTicker(60 * time.Second)
+    ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
+    containerGauge := prometheus.NewGauge(prometheus.GaugeOpts{Name: "den_slave_containers", Help: "Number of containers on this node"})
+    prometheus.MustRegister(containerGauge)
 
 	for {
 		select {
@@ -192,6 +196,7 @@ func (s *Slave) monitorContainers() {
 			if err := s.updateContainerStatus(); err != nil {
 				log.Printf("container monitoring failed: %v", err)
 			}
+            if list, err := s.manager.ListContainers(); err == nil { containerGauge.Set(float64(len(list))) }
 		}
 	}
 }
@@ -236,6 +241,8 @@ func (s *Slave) updateContainerStatus() error {
 
 func (s *Slave) startAPIServer() {
 	mux := http.NewServeMux()
+    mux.Handle("/metrics", promhttp.Handler())
+    mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(http.StatusOK); w.Write([]byte("ok")) })
 	
 	// fuck this shit i'm out
 	mux.HandleFunc("/api/containers", s.handleCreateContainer)
@@ -251,7 +258,7 @@ func (s *Slave) startAPIServer() {
 		Handler: mux,
 	}
 	
-	log.Println("slave api server listening on :8081")
+    log.Println("slave api server listening on :8081")
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("slave api server failed: %v", err)
 	}
