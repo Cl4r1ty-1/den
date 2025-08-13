@@ -136,9 +136,9 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
         },
     })
     r.LoadHTMLGlob("web/templates/*")
-    r.Static("/static", "./web/static")
-    r.GET("/app", func(c *gin.Context) { c.File("web/static/app/index.html") })
-    r.GET("/app/*path", func(c *gin.Context) { c.File("web/static/app/index.html") })
+    r.Static("/assets", "./web/static/app/assets")
+    r.GET("/", func(c *gin.Context) { c.File("web/static/app/index.html") })
+    r.NoRoute(func(c *gin.Context) { c.File("web/static/app/index.html") })
 
     h := handlers.New(authService, db)
 

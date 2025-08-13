@@ -185,7 +185,7 @@ function Admin() {
 function App() {
   React.useEffect(()=>{ fetch('/user/me').then(r=>r.json()).then(u => { (window as any).__denUser=u }) }, [])
   return (
-    <BrowserRouter basename="/app">
+    <BrowserRouter>
       <Layout>
         <Routes>
           <Route path="/" element={<Home/>} />
