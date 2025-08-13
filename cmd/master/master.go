@@ -135,14 +135,11 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
             return template.JS(string(b))
         },
     })
-    r.LoadHTMLGlob("web/templates/*")
     r.Static("/assets", "./web/static/app/assets")
     r.GET("/", func(c *gin.Context) { c.File("web/static/app/index.html") })
     r.NoRoute(func(c *gin.Context) { c.File("web/static/app/index.html") })
 
     h := handlers.New(authService, db)
-
-	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
 	r.GET("/auth/slack", h.SlackAuth)
 	r.GET("/auth/callback", h.SlackCallback)

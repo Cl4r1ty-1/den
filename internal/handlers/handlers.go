@@ -56,8 +56,8 @@ func (h *Handler) RequireAuth() gin.HandlerFunc {
 
         c.Set("user", user)
         if !user.AgreedToTOS || !user.AgreedToPrivacy {
-            if c.FullPath() != "/user/aup" && c.FullPath() != "/user/aup/accept" && c.FullPath() != "/user/aup/questions" && c.FullPath() != "/user/aup/validate" {
-                c.Redirect(http.StatusFound, "/user/aup")
+            if c.FullPath() != "/user/aup/accept" && c.FullPath() != "/user/aup/questions" && c.FullPath() != "/user/aup/validate" {
+                c.Redirect(http.StatusFound, "/aup")
                 c.Abort()
                 return
             }
