@@ -29,6 +29,7 @@ func NewR2ClientFromEnv() (*R2Client, error) {
         Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
         Secure: true,
         Region: "auto",
+        BucketLookup: minio.BucketLookupPath,
     })
     if err != nil {
         return nil, err

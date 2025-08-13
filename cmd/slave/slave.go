@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-    "io"
 	"log"
 	"net/http"
 	"os"
@@ -271,18 +270,25 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "snapshot failed", http.StatusInternalServerError); return
     }
     defer exec.Command("lxc", "delete", req.ContainerID+"/"+snap).Run()
-    cmd := exec.Command("bash", "-lc", fmt.Sprintf("lxc export %s/%s - | zstd -T0 -q", req.ContainerID, snap))
-    curl := exec.Command("curl", "-sS", "-X", "PUT", "--upload-file", "-", req.PutURL)
-    pr, pw := io.Pipe()
-    cmd.Stdout = pw
-    curl.Stdin = pr
+    tmpPath := fmt.Sprintf("/tmp/%s-%s.tar", strings.ReplaceAll(req.ContainerID, "/", "-"), snap)
+    exportCmd := exec.Command("lxc", "export", req.ContainerID+"/"+snap, tmpPath)
+    var exportOut bytes.Buffer
+    exportCmd.Stdout = &exportOut
+    exportCmd.Stderr = &exportOut
+    if err := exportCmd.Run(); err != nil {
+        http.Error(w, "export failed: "+exportOut.String(), http.StatusInternalServerError); return
+    }
+    defer os.Remove(tmpPath)
+
+    curl := exec.Command("curl", "-sS", "--fail", "-X", "PUT", "-H", "Content-Type: application/octet-stream", "--upload-file", tmpPath, req.PutURL)
     var curlOut bytes.Buffer
     curl.Stdout = &curlOut
-    if err := cmd.Start(); err != nil { http.Error(w, "export start failed", http.StatusInternalServerError); return }
-    if err := curl.Start(); err != nil { cmd.Process.Kill(); http.Error(w, "upload start failed", http.StatusInternalServerError); return }
-    go func() { cmd.Wait(); pw.Close() }()
-    if err := curl.Wait(); err != nil { http.Error(w, "upload failed", http.StatusInternalServerError); return }
-    w.WriteHeader(http.StatusOK)
+    curl.Stderr = &curlOut
+    if err := curl.Run(); err != nil {
+        http.Error(w, "upload failed: "+curlOut.String(), http.StatusBadGateway); return
+    }
+    fi, _ := os.Stat(tmpPath)
+    _ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "size": func() int64 { if fi!=nil { return fi.Size() } ; return 0 }()})
 }
 
 func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
