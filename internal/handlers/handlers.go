@@ -415,14 +415,9 @@ func (h *Handler) Home(c *gin.Context) {
 }
 
 func (h *Handler) LoginPage(c *gin.Context) {
-	state := generateState()
-	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
-	
-	authURL := h.auth.GetAuthURL(state)
-	c.HTML(http.StatusOK, "login.html", gin.H{
-		"title":    "login to den",
-		"auth_url": authURL,
-	})
+    state := generateState()
+    c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+    c.Redirect(http.StatusFound, "/auth/slack?state="+state)
 }
 
 func (h *Handler) SlackAuth(c *gin.Context) {
