@@ -265,7 +265,9 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
     if req.ContainerID == "" || req.PutURL == "" { http.Error(w, "missing fields", http.StatusBadRequest); return }
 
-    tmpPath := fmt.Sprintf("/tmp/%s-%d.tar.gz", strings.ReplaceAll(req.ContainerID, "/", "-"), time.Now().Unix())
+    sanitized := strings.ReplaceAll(req.ContainerID, "/", "-")
+    ts := time.Now().Unix()
+    tmpPath := fmt.Sprintf("/tmp/%s-%d.tar.gz", sanitized, ts)
     exportCmd := exec.Command("lxc", "export", req.ContainerID, tmpPath)
     var exportOut bytes.Buffer
     exportCmd.Stdout = &exportOut
@@ -273,16 +275,44 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := exportCmd.Run(); err != nil {
         http.Error(w, "export failed: "+exportOut.String(), http.StatusInternalServerError); return
     }
+    // Repack with relaxed permissions for readability
+    workDir := fmt.Sprintf("/tmp/export-%s-%d", sanitized, ts)
+    _ = os.RemoveAll(workDir)
+    if err := os.MkdirAll(workDir, 0o755); err != nil {
+        http.Error(w, "prep failed", http.StatusInternalServerError); return
+    }
+    untar := exec.Command("tar", "-xzf", tmpPath, "-C", workDir)
+    var untarOut bytes.Buffer
+    untar.Stdout = &untarOut
+    untar.Stderr = &untarOut
+    if err := untar.Run(); err != nil {
+        os.RemoveAll(workDir); os.Remove(tmpPath)
+        http.Error(w, "unpack failed: "+untarOut.String(), http.StatusInternalServerError); return
+    }
+    _ = exec.Command("chmod", "-R", "a+rX", workDir).Run()
+    readableTar := fmt.Sprintf("/tmp/%s-%d.readable.tar.gz", sanitized, ts)
+    retar := exec.Command("bash", "-lc", fmt.Sprintf("tar -czf '%s' -C '%s' .", readableTar, workDir))
+    var retarOut bytes.Buffer
+    retar.Stdout = &retarOut
+    retar.Stderr = &retarOut
+    if err := retar.Run(); err != nil {
+        os.RemoveAll(workDir); os.Remove(tmpPath)
+        http.Error(w, "repack failed: "+retarOut.String(), http.StatusInternalServerError); return
+    }
     defer os.Remove(tmpPath)
+    defer os.RemoveAll(workDir)
+    defer os.Remove(readableTar)
 
-    curl := exec.Command("curl", "-sS", "--fail", "-X", "PUT", "-H", "Content-Type: application/octet-stream", "--upload-file", tmpPath, req.PutURL)
+    uploadPath := readableTar
+
+    curl := exec.Command("curl", "-sS", "--fail", "-X", "PUT", "-H", "Content-Type: application/octet-stream", "--upload-file", uploadPath, req.PutURL)
     var curlOut bytes.Buffer
     curl.Stdout = &curlOut
     curl.Stderr = &curlOut
     if err := curl.Run(); err != nil {
         http.Error(w, "upload failed: "+curlOut.String(), http.StatusBadGateway); return
     }
-    fi, _ := os.Stat(tmpPath)
+    fi, _ := os.Stat(uploadPath)
     _ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "size": func() int64 { if fi!=nil { return fi.Size() } ; return 0 }()})
 }
 
