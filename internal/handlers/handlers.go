@@ -454,64 +454,11 @@ func (h *Handler) SlackCallback(c *gin.Context) {
 	c.SetCookie("session", sessionID, 3600*24*7, "/", "", false, true)
 	c.SetCookie("oauth_state", "", -1, "/", "", false, true)
 
-	c.Redirect(http.StatusFound, "/user/dashboard")
+    c.Redirect(http.StatusFound, "/dashboard")
 }
 func (h *Handler) UserDashboard(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
-	var container *models.Container
-	if user.ContainerID != nil {
-		container = &models.Container{}
-		var allocatedPorts pq.Int64Array
-		err := h.db.QueryRow(`
-			SELECT id, user_id, node_id, name, status, ip_address, ssh_port,
-				   memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
-			FROM containers WHERE id = $1
-		`, *user.ContainerID).Scan(
-			&container.ID, &container.UserID, &container.NodeID, &container.Name,
-			&container.Status, &container.IPAddress, &container.SSHPort,
-			&container.MemoryMB, &container.CPUCores, &container.StorageGB,
-			&allocatedPorts, &container.CreatedAt, &container.UpdatedAt,
-		)
-		if err != nil {
-			fmt.Printf("error loading container for user %d: %v\n", user.ID, err)
-			container = nil
-		} else {
-			// i am a dumbassssssssss
-			container.AllocatedPorts = make([]int, len(allocatedPorts))
-			for i, port := range allocatedPorts {
-				container.AllocatedPorts[i] = int(port)
-			}
-		}
-	}
-	rows, err := h.db.Query(`
-		SELECT id, subdomain, target_port, subdomain_type, is_active, created_at
-		FROM subdomains WHERE user_id = $1
-		ORDER BY created_at DESC
-	`, user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
-		return
-	}
-	defer rows.Close()
-
-	var subdomains []models.Subdomain
-	for rows.Next() {
-		var subdomain models.Subdomain
-		err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
-			&subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt)
-		if err != nil {
-			continue
-		}
-		subdomain.UserID = user.ID
-		subdomains = append(subdomains, subdomain)
-	}
-
-	c.HTML(http.StatusOK, "dashboard.html", gin.H{
-		"title":      "Dashboard",
-		"user":       user,
-		"container":  container,
-		"subdomains": subdomains,
-	})
+	// i am a dumbasssss
+    c.Redirect(http.StatusFound, "/dashboard")
 }
 
 func (h *Handler) ContainerStatus(c *gin.Context) {
