@@ -1,5 +1,3 @@
-web/static/app/
-node_modules/
 temp/
 .env
 den

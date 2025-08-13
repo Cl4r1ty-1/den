@@ -56,8 +56,8 @@ func (h *Handler) RequireAuth() gin.HandlerFunc {
 
         c.Set("user", user)
         if !user.AgreedToTOS || !user.AgreedToPrivacy {
-            if c.FullPath() != "/user/aup/accept" && c.FullPath() != "/user/aup/questions" && c.FullPath() != "/user/aup/validate" {
-                c.Redirect(http.StatusFound, "/aup")
+            if c.FullPath() != "/user/aup" && c.FullPath() != "/user/aup/accept" {
+                c.Redirect(http.StatusFound, "/user/aup")
                 c.Abort()
                 return
             }
@@ -73,30 +73,6 @@ func (h *Handler) AUPPage(c *gin.Context) {
         "title": "terms & privacy",
         "user":  user,
         "quiz_questions": questions,
-    })
-}
-
-func (h *Handler) AUPQuestions(c *gin.Context) {
-    user := c.MustGet("user").(*models.User)
-    questions, err := h.ensureAssignedQuestions(user.ID, 3)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load questions"})
-        return
-    }
-    c.JSON(http.StatusOK, gin.H{"questions": questions})
-}
-
-func (h *Handler) Me(c *gin.Context) {
-    user := c.MustGet("user").(*models.User)
-    c.JSON(http.StatusOK, gin.H{
-        "id": user.ID,
-        "username": user.Username,
-        "display_name": user.DisplayName,
-        "email": user.Email,
-        "is_admin": user.IsAdmin,
-        "container_id": user.ContainerID,
-        "agreed_to_tos": user.AgreedToTOS,
-        "agreed_to_privacy": user.AgreedToPrivacy,
     })
 }
 
@@ -415,9 +391,14 @@ func (h *Handler) Home(c *gin.Context) {
 }
 
 func (h *Handler) LoginPage(c *gin.Context) {
-    state := generateState()
-    c.SetCookie("oauth_state", state, 300, "/", "", false, true)
-    c.Redirect(http.StatusFound, "/auth/slack?state="+state)
+	state := generateState()
+	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+	
+	authURL := h.auth.GetAuthURL(state)
+	c.HTML(http.StatusOK, "login.html", gin.H{
+		"title":    "login to den",
+		"auth_url": authURL,
+	})
 }
 
 func (h *Handler) SlackAuth(c *gin.Context) {
@@ -454,11 +435,64 @@ func (h *Handler) SlackCallback(c *gin.Context) {
 	c.SetCookie("session", sessionID, 3600*24*7, "/", "", false, true)
 	c.SetCookie("oauth_state", "", -1, "/", "", false, true)
 
-    c.Redirect(http.StatusFound, "/dashboard")
+	c.Redirect(http.StatusFound, "/user/dashboard")
 }
 func (h *Handler) UserDashboard(c *gin.Context) {
-	// i am a dumbasssss
-    c.Redirect(http.StatusFound, "/dashboard")
+	user := c.MustGet("user").(*models.User)
+	var container *models.Container
+	if user.ContainerID != nil {
+		container = &models.Container{}
+		var allocatedPorts pq.Int64Array
+		err := h.db.QueryRow(`
+			SELECT id, user_id, node_id, name, status, ip_address, ssh_port,
+				   memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
+			FROM containers WHERE id = $1
+		`, *user.ContainerID).Scan(
+			&container.ID, &container.UserID, &container.NodeID, &container.Name,
+			&container.Status, &container.IPAddress, &container.SSHPort,
+			&container.MemoryMB, &container.CPUCores, &container.StorageGB,
+			&allocatedPorts, &container.CreatedAt, &container.UpdatedAt,
+		)
+		if err != nil {
+			fmt.Printf("error loading container for user %d: %v\n", user.ID, err)
+			container = nil
+		} else {
+			// i am a dumbassssssssss
+			container.AllocatedPorts = make([]int, len(allocatedPorts))
+			for i, port := range allocatedPorts {
+				container.AllocatedPorts[i] = int(port)
+			}
+		}
+	}
+	rows, err := h.db.Query(`
+		SELECT id, subdomain, target_port, subdomain_type, is_active, created_at
+		FROM subdomains WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+		return
+	}
+	defer rows.Close()
+
+	var subdomains []models.Subdomain
+	for rows.Next() {
+		var subdomain models.Subdomain
+		err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
+			&subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt)
+		if err != nil {
+			continue
+		}
+		subdomain.UserID = user.ID
+		subdomains = append(subdomains, subdomain)
+	}
+
+	c.HTML(http.StatusOK, "dashboard.html", gin.H{
+		"title":      "Dashboard",
+		"user":       user,
+		"container":  container,
+		"subdomains": subdomains,
+	})
 }
 
 func (h *Handler) ContainerStatus(c *gin.Context) {

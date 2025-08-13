@@ -135,11 +135,12 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
             return template.JS(string(b))
         },
     })
-    r.Static("/assets", "./web/static/app/assets")
-    r.GET("/", func(c *gin.Context) { c.File("web/static/app/index.html") })
-    r.NoRoute(func(c *gin.Context) { c.File("web/static/app/index.html") })
+    r.LoadHTMLGlob("web/templates/*")
+	r.Static("/static", "./web/static")
 
     h := handlers.New(authService, db)
+
+	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
 	r.GET("/auth/slack", h.SlackAuth)
 	r.GET("/auth/callback", h.SlackCallback)
@@ -148,9 +149,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	userGroup.Use(h.RequireAuth())
 	{
 		userGroup.GET("/aup", h.AUPPage)
-		userGroup.GET("/aup/questions", h.AUPQuestions)
 		userGroup.POST("/aup/accept", h.AUPAccept)
-		userGroup.GET("/me", h.Me)
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
 		userGroup.POST("/container/create", h.CreateContainer)
