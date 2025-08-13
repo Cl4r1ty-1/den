@@ -265,13 +265,8 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
     if req.ContainerID == "" || req.PutURL == "" { http.Error(w, "missing fields", http.StatusBadRequest); return }
 
-    snap := "export-" + fmt.Sprint(time.Now().Unix())
-    if err := exec.Command("lxc", "snapshot", req.ContainerID, snap).Run(); err != nil {
-        http.Error(w, "snapshot failed", http.StatusInternalServerError); return
-    }
-    defer exec.Command("lxc", "delete", req.ContainerID+"/"+snap).Run()
-    tmpPath := fmt.Sprintf("/tmp/%s-%s.tar", strings.ReplaceAll(req.ContainerID, "/", "-"), snap)
-    exportCmd := exec.Command("lxc", "export", req.ContainerID+"/"+snap, tmpPath)
+    tmpPath := fmt.Sprintf("/tmp/%s-%d.tar.gz", strings.ReplaceAll(req.ContainerID, "/", "-"), time.Now().Unix())
+    exportCmd := exec.Command("lxc", "export", req.ContainerID, tmpPath)
     var exportOut bytes.Buffer
     exportCmd.Stdout = &exportOut
     exportCmd.Stderr = &exportOut
