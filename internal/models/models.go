@@ -101,3 +101,17 @@ type Export struct {
     CreatedAt   time.Time `json:"created_at" db:"created_at"`
     UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
+
+type Job struct {
+    ID          int         `json:"id" db:"id"`
+    Type        string      `json:"type" db:"type"`
+    Status      string      `json:"status" db:"status"`
+    Payload     []byte      `json:"payload" db:"payload"`
+    Result      []byte      `json:"result" db:"result"`
+    Error       *string     `json:"error" db:"error"`
+    RunAfter    time.Time   `json:"run_after" db:"run_after"`
+    Attempts    int         `json:"attempts" db:"attempts"`
+    MaxAttempts int         `json:"max_attempts" db:"max_attempts"`
+    CreatedAt   time.Time   `json:"created_at" db:"created_at"`
+    UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
+}

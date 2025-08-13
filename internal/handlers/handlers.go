@@ -20,7 +20,6 @@ import (
 	"github.com/den/internal/database"
 	"github.com/den/internal/dns"
 	"github.com/den/internal/models"
-    "github.com/den/internal/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -333,35 +332,20 @@ func (h *Handler) AdminExportUserContainer(c *gin.Context) {
     err = h.db.QueryRow(`INSERT INTO exports (user_id, container_id, object_key, status, expires_at, requested_by) VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id`, targetUserID, containerID, objectKey, expiresAt, user.ID).Scan(&exportID)
     if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
 
-    r2, err := storage.NewR2ClientFromEnv()
-    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"}); return }
-    putURL, err := r2.PresignedPut(c, objectKey, 2*time.Hour)
-    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create upload url"}); return }
-
-    _, _ = h.db.Exec(`UPDATE exports SET status='uploading', updated_at=NOW() WHERE id=$1`, exportID)
-
-    slaveURL := fmt.Sprintf("http://%s:8081/api/export", nodeHostname)
-    payload := map[string]string{"container_id": containerID, "put_url": putURL}
-    body, _ := json.Marshal(payload)
-    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(body))
-    if err != nil {
-        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, err.Error())
-        c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return
+    // enqueue async export job
+    payload := map[string]interface{}{
+        "export_id": exportID,
+        "user_id": targetUserID,
+        "container_id": containerID,
+        "node_hostname": nodeHostname,
+        "object_key": objectKey,
+        "ttl_days": req.TTLDays,
     }
-    defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
-        b, _ := io.ReadAll(resp.Body)
-        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, string(b))
-        c.JSON(http.StatusBadGateway, gin.H{"error": "export failed: "+string(b)}); return
+    jb, _ := json.Marshal(payload)
+    if _, err := h.db.Exec(`INSERT INTO jobs (type, status, payload) VALUES ('export_container','queued',$1)`, string(jb)); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue job"}); return
     }
-
-    getURL, err := r2.PresignedGet(c, objectKey, time.Duration(req.TTLDays)*24*time.Hour)
-    if err != nil {
-        _, _ = h.db.Exec(`UPDATE exports SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, exportID, err.Error())
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create download url"}); return
-    }
-    _, _ = h.db.Exec(`UPDATE exports SET status='complete', updated_at=NOW() WHERE id=$1`, exportID)
-    c.JSON(http.StatusOK, gin.H{"export_id": exportID, "download_url": getURL, "expires_at": expiresAt})
+    c.JSON(http.StatusOK, gin.H{"export_id": exportID, "queued": true, "expires_at": expiresAt})
 }
 
 func (h *Handler) RequireNodeAuth() gin.HandlerFunc {

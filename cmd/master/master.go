@@ -2,8 +2,10 @@ package master
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -67,6 +69,14 @@ func Run() error {
             }
         }
     }()
+    go func() {
+        for {
+            if err := runJobOnce(db); err != nil {
+                log.Printf("job worker error: %v", err)
+                time.Sleep(2 * time.Second)
+            }
+        }
+    }()
 
 	srv := &http.Server{
 		Addr:    ":8080",
@@ -109,6 +119,74 @@ func cleanupExpiredExports(db *database.DB) error {
         _, _ = db.Exec(`UPDATE exports SET status='expired', updated_at=NOW() WHERE id=$1`, id)
     }
     return nil
+}
+
+func runJobOnce(db *database.DB) error {
+    tx, err := db.Begin()
+    if err != nil { return err }
+    defer tx.Rollback()
+    var id int
+    var jtype string
+    var payloadStr string
+    err = tx.QueryRow(`SELECT id, type, payload FROM jobs WHERE status='queued' AND run_after <= NOW() ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&id, &jtype, &payloadStr)
+    if err != nil {
+        if err.Error() == "sql: no rows in result set" { time.Sleep(1 * time.Second); return nil }
+        return err
+    }
+    if _, err := tx.Exec(`UPDATE jobs SET status='running', attempts=attempts+1, updated_at=NOW() WHERE id=$1`, id); err != nil { return err }
+    if err := tx.Commit(); err != nil { return err }
+
+    switch jtype {
+    case "export_container":
+        return handleExportJob(db, id, []byte(payloadStr))
+    default:
+        _, _ = db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, id, "unknown job type")
+        return nil
+    }
+}
+
+func handleExportJob(db *database.DB, jobID int, payload []byte) error {
+    var p struct {
+        ExportID    int    `json:"export_id"`
+        UserID      int    `json:"user_id"`
+        ContainerID string `json:"container_id"`
+        NodeHostname string `json:"node_hostname"`
+        ObjectKey   string `json:"object_key"`
+        TTLDays     int    `json:"ttl_days"`
+    }
+    if err := json.Unmarshal(payload, &p); err != nil { return err }
+
+    r2, err := storage.NewR2ClientFromEnv()
+    if err != nil { _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, "storage not configured"); return nil }
+    putURL, err := r2.PresignedPut(context.Background(), p.ObjectKey, 2*time.Hour)
+    if err != nil { _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, "presign put failed"); return nil }
+    _, _ = db.Exec(`UPDATE exports SET status='uploading', updated_at=NOW() WHERE id=$1`, p.ExportID)
+
+    slaveURL := fmt.Sprintf("http://%s:8081/api/export", p.NodeHostname)
+    body, _ := json.Marshal(map[string]string{"container_id": p.ContainerID, "put_url": putURL})
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(body))
+    if err != nil { _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, err.Error()); return finalizeJob(db, jobID, false, err.Error(), nil) }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, string(b))
+        return finalizeJob(db, jobID, false, string(b), nil)
+    }
+    getURL, err := r2.PresignedGet(context.Background(), p.ObjectKey, time.Duration(p.TTLDays)*24*time.Hour)
+    if err != nil { _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, "presign get failed"); return finalizeJob(db, jobID, false, "presign get failed", nil) }
+    _, _ = db.Exec(`UPDATE exports SET status='complete', updated_at=NOW() WHERE id=$1`, p.ExportID)
+    res := map[string]string{"download_url": getURL}
+    rb, _ := json.Marshal(res)
+    return finalizeJob(db, jobID, true, "", rb)
+}
+
+func finalizeJob(db *database.DB, jobID int, success bool, errMsg string, result []byte) error {
+    if success {
+        _, err := db.Exec(`UPDATE jobs SET status='success', result=$2, updated_at=NOW() WHERE id=$1`, jobID, string(result))
+        return err
+    }
+    _, err := db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, jobID, errMsg)
+    return err
 }
 
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
