@@ -308,7 +308,22 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 		for req := range reqs {
 			switch req.Type {
 			case "pty-req":
-				err := session.RequestPty("xterm-256color", 120, 30, ssh.TerminalModes{
+				// try to respect the client's requested terminal size bc why not
+				type ptyReqMsg struct {
+					Term     string
+					Columns  uint32
+					Rows     uint32
+					WidthPx  uint32
+					HeightPx uint32
+					Modes    string
+				}
+				var msg ptyReqMsg
+				ssh.Unmarshal(req.Payload, &msg)
+				cols := int(msg.Columns)
+				rows := int(msg.Rows)
+				if cols <= 0 { cols = 80 }
+				if rows <= 0 { rows = 24 }
+				err := session.RequestPty("xterm-256color", cols, rows, ssh.TerminalModes{
 					ssh.ECHO:          1,
 					ssh.TTY_OP_ISPEED: 14400,
 					ssh.TTY_OP_OSPEED: 14400,
@@ -341,13 +356,18 @@ func (g *Gateway) handleLXCSession(nodeConn *ssh.Client, channel ssh.Channel, re
 					}
 				}
 			case "window-change":
-				ok, err := session.SendRequest(req.Type, req.WantReply, req.Payload)
-				if req.WantReply {
-					req.Reply(ok, nil)
+				type winChMsg struct {
+					Columns  uint32
+					Rows     uint32
+					WidthPx  uint32
+					HeightPx uint32
 				}
-				if err != nil {
-					log.Printf("failed to forward window-change: %v", err)
+				var wc winChMsg
+				ssh.Unmarshal(req.Payload, &wc)
+				if err := session.WindowChange(int(wc.Rows), int(wc.Columns)); err != nil {
+					log.Printf("failed to apply window-change: %v", err)
 				}
+				if req.WantReply { req.Reply(true, nil) }
 			default:
 				if req.WantReply {
 					req.Reply(false, nil)
