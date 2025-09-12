@@ -13,6 +13,8 @@ import (
 	"strings"
     "unicode"
 	"log"
+	"os"
+	"html"
 	
 	"github.com/lib/pq"
 
@@ -36,6 +38,32 @@ func New(authService *auth.Service, db *database.DB) *Handler {
 		dns:  dns.NewService(),
 	}
 }
+
+func (h *Handler) inertia(c *gin.Context, component string, props gin.H) {
+	page := gin.H{
+		"component": component,
+		"props":     props,
+		"url":       c.Request.URL.Path,
+		"version":   "",
+	}
+	if c.GetHeader("X-Inertia") == "true" {
+		c.Header("Vary", "Accept")
+		c.Header("X-Inertia", "true")
+		c.JSON(http.StatusOK, page)
+		return
+	}
+	// render SPA shell with injected data-page
+	data, err := os.ReadFile("webapp/dist/index.html")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "frontend not built")
+		return
+	}
+	b, _ := json.Marshal(page)
+	replacement := []byte(`<div id="app" data-page='` + html.EscapeString(string(b)) + `'></div>`) 
+	out := bytes.Replace(data, []byte(`<div id="app"></div>`), replacement, 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", out)
+}
+
 func (h *Handler) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID, err := c.Cookie("session")
@@ -375,37 +403,27 @@ func (h *Handler) Home(c *gin.Context) {
 }
 
 func (h *Handler) LoginPage(c *gin.Context) {
-	state := generateState()
-	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
-	
-	authURL := h.auth.GetAuthURL(state)
-	c.HTML(http.StatusOK, "login.html", gin.H{
-		"title":    "login to den",
-		"auth_url": authURL,
-	})
+	h.inertia(c, "Login", gin.H{})
 }
 
-func (h *Handler) SlackAuth(c *gin.Context) {
+func (h *Handler) GitHubAuth(c *gin.Context) {
 	state := generateState()
 	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
-	
 	authURL := h.auth.GetAuthURL(state)
 	c.Redirect(http.StatusFound, authURL)
 }
 
-func (h *Handler) SlackCallback(c *gin.Context) {
+func (h *Handler) GitHubCallback(c *gin.Context) {
 	storedState, err := c.Cookie("oauth_state")
 	if err != nil || storedState != c.Query("state") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
 		return
 	}
-
 	code := c.Query("code")
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing code"})
 		return
 	}
-
 	user, err := h.auth.HandleCallback(code)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -418,7 +436,6 @@ func (h *Handler) SlackCallback(c *gin.Context) {
 	}
 	c.SetCookie("session", sessionID, 3600*24*7, "/", "", false, true)
 	c.SetCookie("oauth_state", "", -1, "/", "", false, true)
-
 	c.Redirect(http.StatusFound, "/user/dashboard")
 }
 func (h *Handler) UserDashboard(c *gin.Context) {
@@ -441,11 +458,8 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 			fmt.Printf("error loading container for user %d: %v\n", user.ID, err)
 			container = nil
 		} else {
-			// i am a dumbassssssssss
 			container.AllocatedPorts = make([]int, len(allocatedPorts))
-			for i, port := range allocatedPorts {
-				container.AllocatedPorts[i] = int(port)
-			}
+			for i, port := range allocatedPorts { container.AllocatedPorts[i] = int(port) }
 		}
 	}
 	rows, err := h.db.Query(`
@@ -453,30 +467,17 @@ func (h *Handler) UserDashboard(c *gin.Context) {
 		FROM subdomains WHERE user_id = $1
 		ORDER BY created_at DESC
 	`, user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
-		return
-	}
+	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"}); return }
 	defer rows.Close()
-
 	var subdomains []models.Subdomain
 	for rows.Next() {
 		var subdomain models.Subdomain
-		err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort,
-			&subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt)
-		if err != nil {
-			continue
+		if err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort, &subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt); err == nil {
+			subdomain.UserID = user.ID
+			subdomains = append(subdomains, subdomain)
 		}
-		subdomain.UserID = user.ID
-		subdomains = append(subdomains, subdomain)
 	}
-
-	c.HTML(http.StatusOK, "dashboard.html", gin.H{
-		"title":      "Dashboard",
-		"user":       user,
-		"container":  container,
-		"subdomains": subdomains,
-	})
+	h.inertia(c, "Dashboard", gin.H{"user": user, "container": container, "subdomains": subdomains})
 }
 
 func (h *Handler) ContainerStatus(c *gin.Context) {
@@ -843,13 +844,7 @@ func (h *Handler) AdminDashboard(c *gin.Context) {
 	h.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
 	h.db.QueryRow("SELECT COUNT(*) FROM nodes").Scan(&nodeCount)
 	h.db.QueryRow("SELECT COUNT(*) FROM containers").Scan(&containerCount)
-
-	c.HTML(http.StatusOK, "admin_dashboard.html", gin.H{
-		"title":          "Admin Dashboard",
-		"user_count":     userCount,
-		"node_count":     nodeCount,
-		"container_count": containerCount,
-	})
+	h.inertia(c, "Admin", gin.H{"user_count": userCount, "node_count": nodeCount, "container_count": containerCount})
 }
 
 func (h *Handler) NodeManagement(c *gin.Context) {

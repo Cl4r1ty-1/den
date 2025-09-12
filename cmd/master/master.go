@@ -243,13 +243,14 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
     })
     r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
+	r.Static("/assets", "./webapp/dist/assets")
 
     h := handlers.New(authService, db)
 
 	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
-	r.GET("/auth/slack", h.SlackAuth)
-	r.GET("/auth/callback", h.SlackCallback)
+	r.GET("/auth/github", h.GitHubAuth)
+	r.GET("/auth/callback", h.GitHubCallback)
 
 	userGroup := r.Group("/user")
 	userGroup.Use(h.RequireAuth())

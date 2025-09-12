@@ -6,7 +6,7 @@ import (
 
 type User struct {
 	ID           int       `json:"id" db:"id"`
-	SlackID      string    `json:"slack_id" db:"slack_id"`
+	GitHubID     string    `json:"github_id" db:"github_id"`
 	Username     string    `json:"username" db:"username"`
 	Email        string    `json:"email" db:"email"`
 	DisplayName  string    `json:"display_name" db:"display_name"`
