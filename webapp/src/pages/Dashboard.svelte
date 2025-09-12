@@ -7,7 +7,6 @@
 	export let container = null
 	export let subdomains = []
 
-	console.log('Dashboard user data:', user)
 
 	let showSubdomainModal = false
 	let showContainerModal = false
@@ -72,7 +71,7 @@
 	
 	<main class="max-w-6xl mx-auto p-6">
 		<div class="mb-8">
-			<h1 class="text-4xl font-heading mb-2">welcome back, {user.DisplayName} 👋</h1>
+			<h1 class="text-4xl font-heading mb-2">welcome back, {user.display_name} 👋</h1>
 			<p class="text-foreground/70">manage your cozy *nix environment</p>
 		</div>
 
@@ -134,7 +133,7 @@
 							<div>
 								<h3 class="font-heading mb-3">SSH Access</h3>
 								<div class="bg-background border-2 border-border p-4 font-mono text-sm">
-									ssh {user.Username}@{container.IPAddress || 'loading...'}
+									ssh {user.username}@{container.IPAddress || 'loading...'}
 								</div>
 								<p class="text-foreground/70 text-sm mt-2">
 									Use this command to connect to your environment
@@ -217,18 +216,18 @@
 								</div>
 								<div>
 									<div class="font-mono font-bold">
-										{#if subdomain.SubdomainType === 'username'}
-											{subdomain.Subdomain}.hack.kim
+										{#if subdomain.subdomain_type === 'username'}
+											{subdomain.subdomain}.hack.kim
 										{:else}
-											{subdomain.Subdomain}.{user.Username}.hack.kim
+											{subdomain.subdomain}.{user.username}.hack.kim
 										{/if}
 									</div>
-									<div class="text-sm text-foreground/70">→ port {subdomain.TargetPort}</div>
+									<div class="text-sm text-foreground/70">→ port {subdomain.target_port}</div>
 								</div>
 							</div>
 							<div class="flex items-center gap-2">
 								<a 
-									href="https://{subdomain.SubdomainType === 'username' ? subdomain.Subdomain + '.hack.kim' : subdomain.Subdomain + '.' + user.Username + '.hack.kim'}" 
+									href="https://{subdomain.subdomain_type === 'username' ? subdomain.subdomain + '.hack.kim' : subdomain.subdomain + '.' + user.username + '.hack.kim'}" 
 									target="_blank"
 									class="bg-chart-4 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
 								>
@@ -297,7 +296,7 @@
 			<div class="space-y-2">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="project" class="w-4 h-4">
-					<span>project subdomain ({newSubdomain.subdomain}.{user.Username}.hack.kim)</span>
+					<span>project subdomain ({newSubdomain.subdomain}.{user.username}.hack.kim)</span>
 				</label>
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="username" class="w-4 h-4">

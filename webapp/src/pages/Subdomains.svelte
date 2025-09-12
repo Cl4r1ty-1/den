@@ -122,10 +122,10 @@
 								<div>
 									<div class="flex items-center gap-2 mb-1">
 										<div class="nb-mono font-bold text-lg">
-											{#if subdomain.SubdomainType === 'username'}
-												{subdomain.Subdomain}.hack.kim
+											{#if subdomain.subdomain_type === 'username'}
+												{subdomain.subdomain}.hack.kim
 											{:else}
-												{subdomain.Subdomain}.{user.Username}.hack.kim
+												{subdomain.subdomain}.{user.username}.hack.kim
 											{/if}
 										</div>
 										<div class="nb-pill {subdomain.IsActive ? 'nb-pill-success' : 'nb-pill-danger'}">
@@ -133,15 +133,15 @@
 										</div>
 									</div>
 									<div class="text-sm nb-text-muted">
-										<div>→ port {subdomain.TargetPort}</div>
-										<div>created {new Date(subdomain.CreatedAt).toLocaleDateString()}</div>
+										<div>→ port {subdomain.target_port}</div>
+										<div>created {new Date(subdomain.created_at).toLocaleDateString()}</div>
 									</div>
 								</div>
 							</div>
 							
 							<div class="flex items-center gap-3">
 								<a 
-									href="https://{subdomain.SubdomainType === 'username' ? subdomain.Subdomain + '.hack.kim' : subdomain.Subdomain + '.' + user.Username + '.hack.kim'}" 
+									href="https://{subdomain.subdomain_type === 'username' ? subdomain.subdomain + '.hack.kim' : subdomain.subdomain + '.' + user.username + '.hack.kim'}" 
 									target="_blank"
 									class="nb-button nb-button-sm nb-button-secondary"
 								>
@@ -241,11 +241,11 @@
 			<div class="space-y-2">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="username" class="w-4 h-4">
-					<span>username subdomain ({user.Username}.hack.kim)</span>
+					<span>username subdomain ({user.username}.hack.kim)</span>
 				</label>
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="project" class="w-4 h-4">
-					<span>project subdomain (myapp.{user.Username}.hack.kim)</span>
+					<span>project subdomain (myapp.{user.username}.hack.kim)</span>
 				</label>
 			</div>
 		</div>
@@ -256,11 +256,11 @@
 				type="text" 
 				bind:value={newSubdomain.subdomain} 
 				required 
-				placeholder={newSubdomain.subdomain_type === 'username' ? user.Username : 'myapp'}
+				placeholder={newSubdomain.subdomain_type === 'username' ? user.username : 'myapp'}
 				class="nb-input"
 			>
 			<div class="text-xs nb-text-muted mt-1">
-				preview: {newSubdomain.subdomain || (newSubdomain.subdomain_type === 'username' ? user.Username : 'myapp')}{newSubdomain.subdomain_type === 'username' ? '.hack.kim' : '.' + user.Username + '.hack.kim'}
+				preview: {newSubdomain.subdomain || (newSubdomain.subdomain_type === 'username' ? user.username : 'myapp')}{newSubdomain.subdomain_type === 'username' ? '.hack.kim' : '.' + user.username + '.hack.kim'}
 			</div>
 		</div>
 		

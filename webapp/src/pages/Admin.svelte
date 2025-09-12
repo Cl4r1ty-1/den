@@ -109,7 +109,7 @@
 </script>
 
 <div class="min-h-screen bg-background text-foreground">
-	<Header user={{IsAdmin: true}} currentPage="admin" />
+	<Header user={{is_admin: true}} currentPage="admin" />
 	
 	<main class="max-w-6xl mx-auto p-6">
 		<div class="mb-8">

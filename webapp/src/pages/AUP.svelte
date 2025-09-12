@@ -67,7 +67,7 @@
 	<div class="nb-container max-w-4xl">
 		<div class="text-center mb-8">
 			<h1 class="nb-title text-4xl mb-3">
-				welcome, <span class="text-[var(--nb-primary)]">{user.DisplayName}</span>!
+				welcome, <span class="text-[var(--nb-primary)]">{user.display_name}</span>!
 			</h1>
 			<p class="nb-subtitle text-xl">please review and accept our policies to continue</p>
 		</div>

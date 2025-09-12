@@ -31,7 +31,7 @@
 				subdomains
 			</a>
 			
-			{#if user?.IsAdmin}
+			{#if user?.is_admin}
 				<a 
 					href="/admin" 
 					class="flex items-center gap-2 px-3 py-2 border-2 border-border font-heading text-sm hover:translate-x-1 hover:translate-y-1 transition-transform {currentPage === 'admin' ? 'bg-main text-main-foreground shadow-shadow' : 'bg-chart-3 text-main-foreground'}"
@@ -47,8 +47,8 @@
 			{#if user}
 				<div class="flex items-center gap-3 ml-3 pl-3 border-l-2 border-border">
 					<div class="text-sm">
-						<div class="font-heading text-foreground">{user.DisplayName}</div>
-						<div class="text-foreground/70 text-xs">@{user.Username}</div>
+						<div class="font-heading text-foreground">{user.display_name}</div>
+						<div class="text-foreground/70 text-xs">@{user.username}</div>
 					</div>
 					<a 
 						href="/logout" 

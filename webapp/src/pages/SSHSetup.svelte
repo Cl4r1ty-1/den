@@ -230,7 +230,7 @@
 			<div class="nb-card bg-[var(--nb-surface-alt)] mb-4">
 				<h3 class="font-bold mb-2">ssh command</h3>
 				<div class="nb-card bg-[var(--nb-accent)] text-[var(--nb-success)] nb-mono text-sm p-3">
-					ssh {user.Username}@hack.kim
+					ssh {user.username}@hack.kim
 				</div>
 			</div>
 			
