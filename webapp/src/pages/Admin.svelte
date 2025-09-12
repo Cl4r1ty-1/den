@@ -4,12 +4,21 @@
 	export let container_count = 0
 </script>
 
-<div class="p-6 max-w-6xl mx-auto">
-	<h1 class="text-2xl font-bold mb-4">admin</h1>
+<div class="nb-container p-6">
+	<h1 class="nb-title text-3xl mb-4">admin</h1>
 	<div class="grid md:grid-cols-3 gap-4">
-		<div class="nb-card text-center"><div class="text-3xl font-extrabold">{user_count}</div><div>users</div></div>
-		<div class="nb-card text-center"><div class="text-3xl font-extrabold">{node_count}</div><div>nodes</div></div>
-		<div class="nb-card text-center"><div class="text-3xl font-extrabold">{container_count}</div><div>containers</div></div>
+		<div class="nb-card text-center">
+			<div class="text-4xl font-extrabold">{user_count}</div>
+			<div class="text-slate-600">users</div>
+		</div>
+		<div class="nb-card text-center">
+			<div class="text-4xl font-extrabold">{node_count}</div>
+			<div class="text-slate-600">nodes</div>
+		</div>
+		<div class="nb-card text-center">
+			<div class="text-4xl font-extrabold">{container_count}</div>
+			<div class="text-slate-600">containers</div>
+		</div>
 	</div>
 </div>
 

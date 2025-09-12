@@ -4,28 +4,37 @@
 	export let subdomains = []
 </script>
 
-<div class="p-6 max-w-5xl mx-auto">
-	<h1 class="text-2xl font-bold mb-4">welcome, {user?.DisplayName}</h1>
+<div class="nb-container p-6">
+	<h1 class="nb-title text-3xl mb-4">welcome, {user?.DisplayName}</h1>
 	<div class="grid md:grid-cols-2 gap-4">
 		<div class="nb-card">
 			<h2 class="font-semibold mb-2">status</h2>
 			{#if container}
-				<div>running</div>
-				<div class="mt-2 text-sm text-gray-700">container id: {container.ID}</div>
+				<div class="nb-pill">running</div>
+				<div class="mt-3 text-sm text-slate-700 space-y-1">
+					<div><span class="font-semibold">container id:</span> {container.ID}</div>
+					<div><span class="font-semibold">ip:</span> {container.IPAddress}</div>
+					<div><span class="font-semibold">memory:</span> {container.MemoryMB}MB</div>
+					<div><span class="font-semibold">cpu:</span> {container.CPUCores}</div>
+					<div><span class="font-semibold">storage:</span> {container.StorageGB}GB</div>
+				</div>
 			{:else}
-				<div>no environment</div>
+				<div class="nb-pill">no environment</div>
+				<p class="text-sm mt-2">create an environment to get started.</p>
 			{/if}
 		</div>
 		<div class="nb-card">
 			<h2 class="font-semibold mb-2">subdomains</h2>
 			{#if subdomains.length}
-				<ul>
+				<ul class="space-y-2">
 					{#each subdomains as s}
-						<li>{s.Subdomain} → {s.TargetPort}</li>
+						<li class="flex justify-between items-center bg-[var(--nb-muted)] rounded-md p-2 border-2 border-[var(--nb-accent)]">
+							<div class="font-mono text-sm">{s.Subdomain} → {s.TargetPort}</div>
+						</li>
 					{/each}
 				</ul>
 			{:else}
-				<div>no subdomains</div>
+				<div class="text-sm text-slate-600">no subdomains yet.</div>
 			{/if}
 		</div>
 	</div>

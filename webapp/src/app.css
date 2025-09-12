@@ -4,9 +4,11 @@
 
 :root {
 	--nb-bg: #fffbea;
-	--nb-fg: #111827;
+	--nb-fg: #0f172a;
 	--nb-accent: #111827;
-	--nb-shadow: 6px 6px 0 #111827;
+	--nb-shadow: 8px 8px 0 #111827;
+	--nb-shadow-sm: 4px 4px 0 #111827;
+	--nb-muted: #f1f5f9;
 }
 
 body {
@@ -15,18 +17,53 @@ body {
 	font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
+.nb-container {
+	max-width: 1100px;
+	margin-left: auto;
+	margin-right: auto;
+	padding-left: 1rem;
+	padding-right: 1rem;
+}
+
 .nb-card {
 	background: white;
-	border: 2px solid #111827;
-	box-shadow: var(--nb-shadow);
-	border-radius: 0.5rem;
+	border: 2px solid var(--nb-accent);
+	box-shadow: var(--nb-shadow-sm);
+	border-radius: 0.75rem;
 	padding: 1rem;
+}
+
+.nb-card:hover {
+	transform: translate(-2px, -2px);
+	box-shadow: var(--nb-shadow);
+	transition: all .12s ease-in-out;
 }
 
 .nb-button {
 	background: #fff;
-	border: 2px solid #111827;
-	padding: 0.5rem 0.9rem;
+	border: 2px solid var(--nb-accent);
+	padding: 0.7rem 1rem;
+	box-shadow: var(--nb-shadow-sm);
+	font-weight: 800;
+	border-radius: 0.5rem;
+}
+
+.nb-button:hover {
+	transform: translate(-2px, -2px);
 	box-shadow: var(--nb-shadow);
-	font-weight: 700;
+}
+
+.nb-title {
+	font-weight: 900;
+	letter-spacing: -0.02em;
+}
+
+.nb-pill {
+	display: inline-block;
+	border: 2px solid var(--nb-accent);
+	border-radius: 9999px;
+	padding: .1rem .6rem;
+	background: var(--nb-muted);
+	box-shadow: var(--nb-shadow-sm);
+	font-weight: 800;
 }
