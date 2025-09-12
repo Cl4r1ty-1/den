@@ -138,7 +138,7 @@
 							<div>
 								<h3 class="font-heading mb-3">SSH Access</h3>
 								<div class="bg-background border-2 border-border p-4 font-mono text-sm">
-									ssh {user.username}@{container.ip_address || 'loading...'}
+									ssh {user.username}@hack.kim
 								</div>
 								<p class="text-foreground/70 text-sm mt-2">
 									Use this command to connect to your environment
