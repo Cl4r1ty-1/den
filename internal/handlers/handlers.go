@@ -94,8 +94,7 @@ func (h *Handler) RequireAuth() gin.HandlerFunc {
 func (h *Handler) AUPPage(c *gin.Context) {
     user := c.MustGet("user").(*models.User)
     questions, _ := h.ensureAssignedQuestions(user.ID, 3)
-    c.HTML(http.StatusOK, "aup.html", gin.H{
-        "title": "terms & privacy",
+    h.inertia(c, "AUP", gin.H{
         "user":  user,
         "quiz_questions": questions,
     })
@@ -395,9 +394,7 @@ func (h *Handler) RequireNodeAuth() gin.HandlerFunc {
 	}
 }
 func (h *Handler) Home(c *gin.Context) {
-	c.HTML(http.StatusOK, "home.html", gin.H{
-		"title": "den - a cozy pubnix",
-	})
+	h.inertia(c, "Home", gin.H{})
 }
 
 func (h *Handler) LoginPage(c *gin.Context) {
@@ -657,9 +654,49 @@ func (h *Handler) SubdomainManagement(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"subdomains": subdomains})
 		return
 	}
-	c.HTML(http.StatusOK, "subdomains.html", gin.H{
-		"title": "Subdomain Management",
-	})
+	user := c.MustGet("user").(*models.User)
+	var container *models.Container
+	if user.ContainerID != nil {
+		container = &models.Container{}
+		var allocatedPorts pq.Int64Array
+		err := h.db.QueryRow(`
+			SELECT id, user_id, node_id, name, status, ip_address, ssh_port,
+				   memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at
+			FROM containers WHERE id = $1
+		`, *user.ContainerID).Scan(
+			&container.ID, &container.UserID, &container.NodeID, &container.Name,
+			&container.Status, &container.IPAddress, &container.SSHPort,
+			&container.MemoryMB, &container.CPUCores, &container.StorageGB,
+			&allocatedPorts, &container.CreatedAt, &container.UpdatedAt,
+		)
+		if err != nil {
+			container = nil
+		} else {
+			container.AllocatedPorts = make([]int, len(allocatedPorts))
+			for i, port := range allocatedPorts { container.AllocatedPorts[i] = int(port) }
+		}
+	}
+	
+	rows, err := h.db.Query(`
+		SELECT id, subdomain, target_port, subdomain_type, is_active, created_at
+		FROM subdomains WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, user.ID)
+	if err != nil { 
+		h.inertia(c, "Subdomains", gin.H{"user": user, "container": container, "subdomains": []models.Subdomain{}})
+		return 
+	}
+	defer rows.Close()
+	var subdomains []models.Subdomain
+	for rows.Next() {
+		var subdomain models.Subdomain
+		if err := rows.Scan(&subdomain.ID, &subdomain.Subdomain, &subdomain.TargetPort, &subdomain.SubdomainType, &subdomain.IsActive, &subdomain.CreatedAt); err == nil {
+			subdomain.UserID = user.ID
+			subdomains = append(subdomains, subdomain)
+		}
+	}
+	
+	h.inertia(c, "Subdomains", gin.H{"user": user, "container": container, "subdomains": subdomains})
 }
 
 func (h *Handler) CreateSubdomain(c *gin.Context) {
@@ -800,9 +837,8 @@ func (h *Handler) DeleteSubdomain(c *gin.Context) {
 func (h *Handler) SSHSetup(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 	
-	c.HTML(http.StatusOK, "ssh_setup.html", gin.H{
-		"title": "SSH Setup",
-		"user":  user,
+	h.inertia(c, "SSHSetup", gin.H{
+		"user": user,
 	})
 }
 

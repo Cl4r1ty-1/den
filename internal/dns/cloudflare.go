@@ -34,8 +34,6 @@ type CloudflareError struct {
 	Message string `json:"message"`
 }
 
-// Cloudflare responses vary per endpoint. Create/Update return a single object,
-// list/search return an array, and delete returns a small result payload.
 type CloudflareListResponse struct {
     Success bool               `json:"success"`
     Errors  []CloudflareError  `json:"errors"`

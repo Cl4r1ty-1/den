@@ -282,7 +282,6 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := exportCmd.Run(); err != nil {
         http.Error(w, "export failed: "+exportOut.String(), http.StatusInternalServerError); return
     }
-    // Repack with relaxed permissions for readability
     workDir := fmt.Sprintf("/tmp/export-%s-%d", sanitized, ts)
     _ = os.RemoveAll(workDir)
     if err := os.MkdirAll(workDir, 0o755); err != nil {
