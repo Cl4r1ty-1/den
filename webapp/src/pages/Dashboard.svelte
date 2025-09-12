@@ -12,20 +12,73 @@
 	let showContainerModal = false
 	let newSubdomain = { subdomain: '', target_port: '', subdomain_type: 'project' }
 	let toastContainer
+	let containerCreating = false
+	let creationProgress = 0
 
 	async function createContainer() {
+		containerCreating = true
+		creationProgress = 0
+		showContainerModal = false
+		
 		try {
+			toastContainer.addToast('Creating your environment...', 'info')
+			creationProgress = 20
+			
 			const res = await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+			creationProgress = 40
+			
 			const data = await res.json()
+			creationProgress = 60
+			
 			if (data.error) {
+				containerCreating = false
+				creationProgress = 0
 				toastContainer.addToast(data.error, 'danger')
 				return
 			}
-			toastContainer.addToast('Container creation started! Refresh in a few minutes.', 'success')
-			showContainerModal = false
-			setTimeout(() => location.reload(), 2000)
+			
+			// Container creation started successfully
+			creationProgress = 80
+			toastContainer.addToast('Environment creation started! This may take a few minutes...', 'success')
+			
+			// Simulate progress and check for completion
+			let checkAttempts = 0
+			const maxAttempts = 30 // 5 minutes max
+			
+			const checkStatus = async () => {
+				try {
+					const statusRes = await fetch('/user/container')
+					const statusData = await statusRes.json()
+					
+					checkAttempts++
+					creationProgress = Math.min(80 + (checkAttempts * 2), 98)
+					
+					if (statusData.container && statusData.container.status === 'running') {
+						creationProgress = 100
+						containerCreating = false
+						toastContainer.addToast('Environment ready! Reloading page...', 'success')
+						setTimeout(() => location.reload(), 1500)
+					} else if (checkAttempts < maxAttempts) {
+						setTimeout(checkStatus, 10000)
+					} else {
+						containerCreating = false
+						creationProgress = 0
+						toastContainer.addToast('Environment is taking longer than expected. Please refresh the page in a few minutes.', 'warning')
+					}
+				} catch (error) {
+					console.error('Error checking container status:', error)
+					if (checkAttempts < maxAttempts) {
+						setTimeout(checkStatus, 10000)
+					}
+				}
+			}
+			
+			setTimeout(checkStatus, 5000)
+			
 		} catch (error) {
 			console.error('Error creating container:', error)
+			containerCreating = false
+			creationProgress = 0
 			toastContainer.addToast('Failed to create container: ' + error.message, 'danger')
 		}
 	}
@@ -111,6 +164,25 @@
 				<div class="text-foreground/70 text-sm">ports</div>
 			</div>
 		</div>
+		
+		{#if containerCreating}
+			<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow mb-8">
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="text-xl font-heading">creating environment...</h2>
+					<div class="text-sm text-foreground/70">{creationProgress}%</div>
+				</div>
+				<div class="w-full bg-background border-2 border-border h-4 overflow-hidden">
+					<div 
+						class="h-full bg-chart-4 transition-all duration-500 ease-out"
+						style="width: {creationProgress}%"
+					></div>
+				</div>
+				<p class="text-sm text-foreground/70 mt-2">
+					Please wait while we set up your development environment. This usually takes 2-5 minutes.
+				</p>
+			</div>
+		{/if}
+		
 		<div class="grid lg:grid-cols-2 gap-8 mb-8">
 			<div class="lg:col-span-2">
 				<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
@@ -136,12 +208,24 @@
 					{#if container}
 						<div class="grid md:grid-cols-2 gap-6">
 							<div>
-								<h3 class="font-heading mb-3">SSH Access</h3>
+								<div class="flex items-center justify-between mb-3">
+									<h3 class="font-heading">SSH Access</h3>
+									<a 
+										href="/user/ssh-setup"
+										class="bg-chart-2 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+									>
+										<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+										</svg>
+										setup ssh
+									</a>
+								</div>
 								<div class="bg-background border-2 border-border p-4 font-mono text-sm">
 									ssh {user.username}@hack.kim
 								</div>
 								<p class="text-foreground/70 text-sm mt-2">
-									Use this command to connect to your environment
+									Use this command to connect to your environment. Set up SSH keys or password first.
 								</p>
 							</div>
 							
@@ -179,7 +263,8 @@
 							<h3 class="text-xl font-heading mb-2">no environment yet</h3>
 							<p class="text-foreground/70 mb-6">create your personal development environment to get started</p>
 							<button 
-								class="bg-main text-main-foreground border-2 border-border px-6 py-3 text-lg font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+								class="bg-main text-main-foreground border-2 border-border px-6 py-3 text-lg font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+								disabled={containerCreating}
 								on:click={() => showContainerModal = true}
 							>
 								<svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
