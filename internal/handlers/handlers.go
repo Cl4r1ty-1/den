@@ -14,7 +14,6 @@ import (
     "unicode"
 	"log"
 	"os"
-	"html"
 	
 	"github.com/lib/pq"
 
@@ -52,14 +51,13 @@ func (h *Handler) inertia(c *gin.Context, component string, props gin.H) {
 		c.JSON(http.StatusOK, page)
 		return
 	}
-	// render SPA shell with injected data-page
 	data, err := os.ReadFile("webapp/dist/index.html")
 	if err != nil {
 		c.String(http.StatusInternalServerError, "frontend not built")
 		return
 	}
 	b, _ := json.Marshal(page)
-	replacement := []byte(`<div id="app" data-page='` + html.EscapeString(string(b)) + `'></div>`) 
+	replacement := []byte(`<div id="app" data-page='` + string(b) + `'></div>`) 
 	out := bytes.Replace(data, []byte(`<div id="app"></div>`), replacement, 1)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", out)
 }

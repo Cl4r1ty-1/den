@@ -244,6 +244,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
     r.LoadHTMLGlob("web/templates/*")
 	r.Static("/static", "./web/static")
 	r.Static("/assets", "./webapp/dist/assets")
+	r.StaticFile("/vite.svg", "./webapp/dist/vite.svg")
 
     h := handlers.New(authService, db)
 
