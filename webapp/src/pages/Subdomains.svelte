@@ -4,7 +4,7 @@
 	import ToastContainer from '../lib/ToastContainer.svelte'
 	
 	export let user
-	export let container
+	export let container = null
 	export let subdomains = []
 
 	let showSubdomainModal = false
@@ -79,7 +79,7 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
 					</svg>
 				</div>
-				<div class="nb-title text-2xl">{container?.AllocatedPorts?.length || 0}</div>
+				<div class="nb-title text-2xl">{container?.allocated_ports?.length || 0}</div>
 				<div class="nb-text-muted text-sm">available ports</div>
 			</div>
 			
@@ -189,7 +189,7 @@
 				</button>
 			</div>
 			
-			{#if container.allocated_ports && container.allocated_ports.length}
+			{#if container?.allocated_ports && container.allocated_ports.length}
 				<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
 					{#each container.allocated_ports as port}
 						<div class="nb-card text-center">

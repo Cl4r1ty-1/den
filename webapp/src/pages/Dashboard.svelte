@@ -14,15 +14,20 @@
 	let toastContainer
 
 	async function createContainer() {
-		const res = await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-		const data = await res.json()
-		if (data.error) {
-			toastContainer.addToast(data.error, 'danger')
-			return
+		try {
+			const res = await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+			const data = await res.json()
+			if (data.error) {
+				toastContainer.addToast(data.error, 'danger')
+				return
+			}
+			toastContainer.addToast('Container creation started! Refresh in a few minutes.', 'success')
+			showContainerModal = false
+			setTimeout(() => location.reload(), 2000)
+		} catch (error) {
+			console.error('Error creating container:', error)
+			toastContainer.addToast('Failed to create container: ' + error.message, 'danger')
 		}
-		toastContainer.addToast('Container creation started! Refresh in a few minutes.', 'success')
-		showContainerModal = false
-		setTimeout(() => location.reload(), 2000)
 	}
 	
 	async function getNewPort() {
@@ -268,10 +273,21 @@
 </div>
 
 <Modal show={showContainerModal} title="Create Environment" onClose={() => showContainerModal = false}>
-	<p class="text-foreground/70 mb-6">
-		This will create your personal development environment. 
-		It may take a few minutes to set up.
-	</p>
+	<div class="space-y-4">
+		<p class="text-foreground/70">
+			This will create a new development environment for you. It may take a few minutes to set up.
+		</p>
+		<div class="bg-background border-2 border-border p-4">
+			<h4 class="font-heading mb-2">What you'll get:</h4>
+			<ul class="text-sm text-foreground/70 space-y-1">
+				<li>• Ubuntu-based container</li>
+				<li>• SSH access</li>
+				<li>• 4GB RAM, 4 CPU cores</li>
+				<li>• 15GB storage</li>
+				<li>• Network ports for your applications</li>
+			</ul>
+		</div>
+	</div>
 	
 	<div slot="footer" class="flex gap-3">
 		<button 
@@ -345,37 +361,5 @@
 	</div>
 </Modal>
 
-<Modal show={showContainerModal} title="Create Environment" onClose={() => showContainerModal = false}>
-	<div class="space-y-4">
-		<p class="text-foreground/70">
-			This will create a new development environment for you. It may take a few minutes to set up.
-		</p>
-		<div class="bg-background border-2 border-border p-4">
-			<h4 class="font-heading mb-2">What you'll get:</h4>
-			<ul class="text-sm text-foreground/70 space-y-1">
-				<li>• Ubuntu-based container</li>
-				<li>• SSH access</li>
-				<li>• 4GB RAM, 4 CPU cores</li>
-				<li>• 15GB storage</li>
-				<li>• Network ports for your applications</li>
-			</ul>
-		</div>
-	</div>
-	
-	<div slot="footer" class="flex gap-3">
-		<button 
-			class="bg-foreground/10 border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform"
-			on:click={() => showContainerModal = false}
-		>
-			cancel
-		</button>
-		<button 
-			class="bg-main text-main-foreground border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
-			on:click={createContainer}
-		>
-			create environment
-		</button>
-	</div>
-</Modal>
 
 <ToastContainer bind:this={toastContainer} />

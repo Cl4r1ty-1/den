@@ -26,20 +26,20 @@
 
 {#if show}
 	<div 
-		class="nb-modal-backdrop" 
+		class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-overlay" 
 		on:click={handleBackdropClick}
 		on:keydown={handleKeydown}
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
 	>
-		<div class="nb-modal {sizes[size]} w-full">
+		<div class="bg-secondary-background border-2 border-border shadow-shadow {sizes[size]} w-full">
 			{#if title}
-				<div class="nb-modal-header">
+				<div class="p-6 border-b-2 border-border">
 					<div class="flex items-center justify-between">
-						<h3 class="nb-title text-xl">{title}</h3>
+						<h3 class="text-xl font-heading">{title}</h3>
 						<button 
-							class="nb-button nb-button-sm" 
+							class="bg-foreground/10 border-2 border-border p-2 hover:translate-x-1 hover:translate-y-1 transition-transform" 
 							on:click={onClose}
 							aria-label="Close modal"
 						>
@@ -51,12 +51,12 @@
 				</div>
 			{/if}
 			
-			<div class="nb-modal-body">
+			<div class="p-6">
 				<slot />
 			</div>
 			
 			{#if $$slots.footer}
-				<div class="nb-modal-footer">
+				<div class="p-6 border-t-2 border-border">
 					<slot name="footer" />
 				</div>
 			{/if}
