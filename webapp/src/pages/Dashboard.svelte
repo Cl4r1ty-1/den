@@ -102,7 +102,7 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
 					</svg>
 				</div>
-				<div class="text-2xl font-heading">{container?.AllocatedPorts?.length || 0}</div>
+				<div class="text-2xl font-heading">{container?.allocated_ports?.length || 0}</div>
 				<div class="text-foreground/70 text-sm">ports</div>
 			</div>
 		</div>
@@ -133,7 +133,7 @@
 							<div>
 								<h3 class="font-heading mb-3">SSH Access</h3>
 								<div class="bg-background border-2 border-border p-4 font-mono text-sm">
-									ssh {user.username}@{container.IPAddress || 'loading...'}
+									ssh {user.username}@{container.ip_address || 'loading...'}
 								</div>
 								<p class="text-foreground/70 text-sm mt-2">
 									Use this command to connect to your environment
@@ -153,9 +153,9 @@
 										get new port
 									</button>
 								</div>
-								{#if container?.AllocatedPorts?.length}
+								{#if container?.allocated_ports?.length}
 									<div class="flex flex-wrap gap-2">
-										{#each container.AllocatedPorts as port}
+										{#each container.allocated_ports as port}
 											<div class="bg-background border-2 border-border px-2 py-1 text-sm font-mono">{port}</div>
 										{/each}
 									</div>
@@ -320,8 +320,8 @@
 			<label class="block text-sm font-heading mb-2">target port</label>
 			<select bind:value={newSubdomain.target_port} required class="w-full bg-background border-2 border-border p-3">
 				<option value="">select a port</option>
-				{#if container?.AllocatedPorts}
-					{#each container.AllocatedPorts as port}
+				{#if container?.allocated_ports}
+					{#each container.allocated_ports as port}
 						<option value={port}>{port}</option>
 					{/each}
 				{/if}
@@ -341,6 +341,39 @@
 			on:click={createSubdomain}
 		>
 			create subdomain
+		</button>
+	</div>
+</Modal>
+
+<Modal show={showContainerModal} title="Create Environment" onClose={() => showContainerModal = false}>
+	<div class="space-y-4">
+		<p class="text-foreground/70">
+			This will create a new development environment for you. It may take a few minutes to set up.
+		</p>
+		<div class="bg-background border-2 border-border p-4">
+			<h4 class="font-heading mb-2">What you'll get:</h4>
+			<ul class="text-sm text-foreground/70 space-y-1">
+				<li>• Ubuntu-based container</li>
+				<li>• SSH access</li>
+				<li>• 4GB RAM, 4 CPU cores</li>
+				<li>• 15GB storage</li>
+				<li>• Network ports for your applications</li>
+			</ul>
+		</div>
+	</div>
+	
+	<div slot="footer" class="flex gap-3">
+		<button 
+			class="bg-foreground/10 border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform"
+			on:click={() => showContainerModal = false}
+		>
+			cancel
+		</button>
+		<button 
+			class="bg-main text-main-foreground border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+			on:click={createContainer}
+		>
+			create environment
 		</button>
 	</div>
 </Modal>

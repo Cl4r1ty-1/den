@@ -128,8 +128,8 @@
 												{subdomain.subdomain}.{user.username}.hack.kim
 											{/if}
 										</div>
-										<div class="nb-pill {subdomain.IsActive ? 'nb-pill-success' : 'nb-pill-danger'}">
-											{subdomain.IsActive ? 'active' : 'inactive'}
+										<div class="nb-pill {subdomain.is_active ? 'nb-pill-success' : 'nb-pill-danger'}">
+											{subdomain.is_active ? 'active' : 'inactive'}
 										</div>
 									</div>
 									<div class="text-sm nb-text-muted">
@@ -150,7 +150,7 @@
 									</svg>
 									visit
 								</a>
-								<button class="nb-button nb-button-sm nb-button-danger" on:click={() => deleteSubdomain(subdomain.ID)}>
+								<button class="nb-button nb-button-sm nb-button-danger" on:click={() => deleteSubdomain(subdomain.id)}>
 									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
 									</svg>
@@ -189,9 +189,9 @@
 				</button>
 			</div>
 			
-			{#if container.AllocatedPorts && container.AllocatedPorts.length}
+			{#if container.allocated_ports && container.allocated_ports.length}
 				<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-					{#each container.AllocatedPorts as port}
+					{#each container.allocated_ports as port}
 						<div class="nb-card text-center">
 							<div class="nb-title text-lg">{port}</div>
 							<div class="text-xs nb-text-muted">available</div>
@@ -268,8 +268,8 @@
 			<label class="nb-label">target port</label>
 			<select bind:value={newSubdomain.target_port} required class="nb-input nb-select">
 				<option value="">select a port</option>
-				{#if container?.AllocatedPorts}
-					{#each container.AllocatedPorts as port}
+				{#if container?.allocated_ports}
+					{#each container.allocated_ports as port}
 						<option value={port}>{port}</option>
 					{/each}
 				{/if}
