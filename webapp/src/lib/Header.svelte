@@ -6,7 +6,7 @@
 <header class="bg-secondary-background border-b-2 border-border shadow-shadow sticky top-0 z-40">
 	<div class="max-w-6xl mx-auto flex items-center justify-between py-4 px-6">
 		<a href="/user/dashboard" class="text-2xl font-heading hover:translate-x-1 hover:translate-y-1 transition-transform">
-			<span class="text-chart-1">d</span><span class="text-chart-3">e</span><span class="text-chart-2">n</span>
+			<span class="text-chart-1">d</span><span class="text-chart-4">e</span><span class="text-chart-2">n</span>
 		</a>
 		
 		<nav class="flex items-center gap-3">

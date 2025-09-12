@@ -9,7 +9,7 @@
 		<div class="max-w-4xl text-center">
 			<div class="mb-12">
 				<h1 class="text-8xl md:text-9xl font-heading mb-6">
-					<span class="text-chart-1">d</span><span class="text-chart-3">e</span><span class="text-chart-2">n</span>
+					<span class="text-chart-1">d</span><span class="text-chart-4">e</span><span class="text-chart-2">n</span>
 				</h1>
 				<p class="text-3xl md:text-4xl font-heading mb-4">your cozy *nix home</p>
 				<p class="text-xl text-foreground/70 max-w-2xl mx-auto mb-8">
