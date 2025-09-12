@@ -7,6 +7,8 @@
 	export let container = null
 	export let subdomains = []
 
+	console.log('Dashboard user data:', user)
+
 	let showSubdomainModal = false
 	let showContainerModal = false
 	let newSubdomain = { subdomain: '', target_port: '', subdomain_type: 'project' }

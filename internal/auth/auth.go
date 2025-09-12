@@ -145,12 +145,13 @@ func (s *Service) createOrUpdateUser(ghUser *GitHubUser) (*models.User, error) {
 	user.TOSQuestions = make([]int, len(tosQuestions))
 	for i, v := range tosQuestions { user.TOSQuestions[i] = int(v) }
 	if err == sql.ErrNoRows {
-		base := ghUser.Login
-		if base == "" { base = "user" }
-		username := generateUsername(base)
+		username := ghUser.Login
+		if username == "" { username = "user" }
+		
 		displayName := ""
 		if ghUser.Name != nil { displayName = *ghUser.Name }
-		if displayName == "" { displayName = base }
+		if displayName == "" { displayName = username }
+		
 		email := ""
 		if ghUser.Email != nil { email = *ghUser.Email }
 		var tos pq.Int64Array
@@ -179,6 +180,8 @@ func (s *Service) createOrUpdateUser(ghUser *GitHubUser) (*models.User, error) {
 			WHERE id = $3
 		`, email, displayName, user.ID)
 		if err != nil { return nil, err }
+		user.Email = email
+		user.DisplayName = displayName
 	}
 	return &user, nil
 }
@@ -239,28 +242,6 @@ func (s *Service) SetSSHPublicKey(userID int, publicKey string) error {
 	return err
 }
 
-func generateUsername(name string) string {
-	// just fucking yoink it from slack
-	username := ""
-	for _, char := range name {
-		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
-			username += string(char)
-		} else if char >= 'A' && char <= 'Z' {
-			username += string(char + 32) // lowercase this bish
-		}
-	}
-	
-	if username == "" {
-		username = "user"
-	}
-	
-	// people probably have the same user so woooo suffix
-	suffix := make([]byte, 4)
-	rand.Read(suffix)
-	username += hex.EncodeToString(suffix)
-	
-	return username
-}
 
 func generateSessionID() string {
 	bytes := make([]byte, 32)
