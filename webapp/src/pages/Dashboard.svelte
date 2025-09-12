@@ -1,9 +1,20 @@
 <script>
+	import Header from '../lib/Header.svelte'
 	export let user
 	export let container
 	export let subdomains = []
+
+	async function createContainer() {
+		await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+		location.reload()
+	}
+	async function getNewPort() {
+		await fetch('/user/container/ports/new', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+		location.reload()
+	}
 </script>
 
+<Header {user} />
 <div class="nb-container p-6">
 	<h1 class="nb-title text-3xl mb-4">welcome, {user?.DisplayName}</h1>
 	<div class="grid md:grid-cols-2 gap-4">
@@ -18,9 +29,16 @@
 					<div><span class="font-semibold">cpu:</span> {container.CPUCores}</div>
 					<div><span class="font-semibold">storage:</span> {container.StorageGB}GB</div>
 				</div>
+				<div class="mt-3 flex gap-2">
+					<button class="nb-button" on:click={getNewPort}>get new port</button>
+					<a class="nb-button" href="/user/ssh-setup">configure ssh</a>
+				</div>
 			{:else}
 				<div class="nb-pill">no environment</div>
 				<p class="text-sm mt-2">create an environment to get started.</p>
+				<div class="mt-3">
+					<button class="nb-button" on:click={createContainer}>create container</button>
+				</div>
 			{/if}
 		</div>
 		<div class="nb-card">

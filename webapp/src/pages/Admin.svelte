@@ -1,9 +1,11 @@
 <script>
+	import Header from '../lib/Header.svelte'
 	export let user_count = 0
 	export let node_count = 0
 	export let container_count = 0
 </script>
 
+<Header user={{ IsAdmin: true }} />
 <div class="nb-container p-6">
 	<h1 class="nb-title text-3xl mb-4">admin</h1>
 	<div class="grid md:grid-cols-3 gap-4">
