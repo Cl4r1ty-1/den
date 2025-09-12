@@ -1,4 +1,6 @@
-.PHONY: build-master build-slave build-all clean test
+.PHONY: build-master build-slave build-all build-webapp clean test
+
+build-all: build-master build-slave build-webapp
 
 build-master:
 	@echo "Building master node..."
@@ -8,10 +10,13 @@ build-slave:
 	@echo "Building slave node..."
 	go build -tags slave -o den_slave main.go
 
-build-all: build-master build-slave
+build-webapp:
+	@echo "Building webapp..."
+	cd webapp && npm run build
+
 
 clean:
-	rm -f den_master den_slave
+	rm -f den_master den_slave webapp/dist
 
 test-master:
 	go test ./... -tags ""
@@ -33,3 +38,6 @@ deps-slave:
 	sudo apt install -y liblxc-dev pkg-config || \
 	sudo apt install -y lxc-dev pkg-config
 	go mod download
+
+deps-webapp:
+	cd webapp && npm install
