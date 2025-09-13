@@ -144,6 +144,8 @@ func runJobOnce(db *database.DB) error {
         return handleExportJob(db, id, []byte(payloadStr))
     case "create_container":
         return handleCreateContainerJob(db, id, []byte(payloadStr))
+    case "delete_container":
+        return handleDeleteContainerJob(db, id, []byte(payloadStr))
     default:
         _, _ = db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, id, "unknown job type")
         return nil
@@ -250,6 +252,44 @@ func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error 
     return finalizeJob(db, jobID, true, "", rb)
 }
 
+func handleDeleteContainerJob(db *database.DB, jobID int, payload []byte) error {
+    var p struct {
+        UserID      int    `json:"user_id"`
+        ContainerID string `json:"container_id"`
+        NodeHostname string `json:"node_hostname"`
+        Username    string `json:"username"`
+    }
+    if err := json.Unmarshal(payload, &p); err != nil { return finalizeJob(db, jobID, false, "invalid payload", nil) }
+
+    slaveURL := fmt.Sprintf("http://%s:8081/api/containers/%s", p.NodeHostname, p.ContainerID)
+    req, _ := http.NewRequest(http.MethodDelete, slaveURL, nil)
+    client := &http.Client{Timeout: 30 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return finalizeJob(db, jobID, false, err.Error(), nil)
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        return finalizeJob(db, jobID, false, string(b), nil)
+    }
+
+    if rows, qerr := db.Query(`SELECT subdomain, subdomain_type FROM subdomains WHERE user_id = $1`, p.UserID); qerr == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var sub, subType string
+            if err := rows.Scan(&sub, &subType); err == nil {
+            }
+        }
+        _, _ = db.Exec("DELETE FROM subdomains WHERE user_id = $1", p.UserID)
+    }
+
+    _, _ = db.Exec("DELETE FROM containers WHERE id = $1", p.ContainerID)
+    _, _ = db.Exec("UPDATE users SET container_id = NULL, updated_at = NOW() WHERE id = $1", p.UserID)
+
+    return finalizeJob(db, jobID, true, "", nil)
+}
+
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
     gin.SetMode(gin.ReleaseMode)
     r := gin.New()
@@ -344,6 +384,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		adminGroup.DELETE("/users/:id", h.DeleteUser)
 		adminGroup.DELETE("/users/:id/container", h.AdminDeleteUserContainer)
         adminGroup.POST("/users/:id/export", h.AdminExportUserContainer)
+		adminGroup.GET("/jobs", h.AdminListJobs)
+		adminGroup.GET("/jobs/:id", h.AdminGetJob)
 	}
 
 	apiGroup := r.Group("/api")

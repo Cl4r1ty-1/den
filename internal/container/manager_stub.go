@@ -22,6 +22,15 @@ type ContainerInfo struct {
 	SSHPort  int
 }
 
+type ContainerStats struct {
+	CPUUsageNanoseconds   uint64 `json:"cpu_usage_ns"`
+	MemoryUsageBytes      uint64 `json:"memory_usage_bytes"`
+	MemoryTotalBytes      uint64 `json:"memory_total_bytes"`
+	DiskUsageBytes        uint64 `json:"disk_usage_bytes"`
+	NetworkRXBytes        uint64 `json:"network_rx_bytes"`
+	NetworkTXBytes        uint64 `json:"network_tx_bytes"`
+}
+
 func NewManager(publicHostname string) (*Manager, error) {
 	return &Manager{
 		defaultMemoryMB:  4096,
@@ -41,6 +50,10 @@ func (m *Manager) ListContainers() ([]*ContainerInfo, error) {
 
 func (m *Manager) GetContainerStatus(containerID string) (string, error) {
 	return "", fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) GetContainerStats(containerID string) (*ContainerStats, error) {
+	return nil, fmt.Errorf("container operations not supported on master node")
 }
 
 func (m *Manager) DeleteContainer(containerID string) error {

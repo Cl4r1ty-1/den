@@ -83,17 +83,39 @@
 		loadUsers()
 	}
 
-	async function deleteContainer(containerId) {
+	async function pollJob(jobId) {
+		for (let i = 0; i < 90; i++) {
+			try {
+				const r = await fetch(`/admin/jobs/${jobId}`)
+				const j = await r.json()
+				if (j && (j.status === 'success' || j.status === 'failed')) {
+					if (j.status === 'success') {
+						toastContainer.addToast('Container deleted successfully!', 'success')
+						loadUsers()
+					} else {
+						toastContainer.addToast(j.error || 'Delete job failed', 'danger')
+					}
+					return
+				}
+			} catch (e) {
+			}
+			await new Promise(r => setTimeout(r, 2000))
+		}
+		toastContainer.addToast('Timed out waiting for delete job', 'danger')
+	}
+
+	async function deleteUserContainer(userId) {
 		if (!confirm('Are you sure you want to delete this container?')) return
-		
-		const res = await fetch(`/admin/containers/${containerId}`, { method: 'DELETE' })
+		const res = await fetch(`/admin/users/${userId}/container`, { method: 'DELETE' })
 		const data = await res.json()
 		if (data.error) {
 			toastContainer.addToast(data.error, 'danger')
 			return
 		}
-		toastContainer.addToast('Container deleted successfully!', 'success')
-		loadUsers()
+		toastContainer.addToast('Deletion queued…', 'warning')
+		if (data.job_id) {
+			pollJob(data.job_id)
+		}
 	}
 
 	function switchTab(tab) {
@@ -287,7 +309,7 @@
 											{#if user.container_id}
 												<button 
 													class="bg-chart-1 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
-													on:click={() => deleteContainer(user.container_id)}
+													on:click={() => deleteUserContainer(user.id)}
 												>
 													<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>

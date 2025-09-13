@@ -975,12 +975,10 @@ func (h *Handler) UserManagement(c *gin.Context) {
 }
 
 func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
-    requestID := c.GetString("request_id")
+    user := c.MustGet("user").(*models.User)
+    if !user.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
     userID, err := strconv.Atoi(c.Param("id"))
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-        return
-    }
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"}); return }
 
     var containerID, nodeHostname, username string
     err = h.db.QueryRow(`
@@ -990,44 +988,70 @@ func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
         JOIN nodes n ON c.node_id = n.id
         WHERE u.id = $1
     `, userID).Scan(&containerID, &nodeHostname, &username)
-    if err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "user has no container"})
-        return
-    }
+    if err != nil { c.JSON(http.StatusNotFound, gin.H{"error": "user has no container"}); return }
 
-    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
-    req, _ := http.NewRequest(http.MethodDelete, slaveURL+"/api/containers/"+containerID, nil)
-    client := &http.Client{Timeout: 30 * time.Second}
-    resp, derr := client.Do(req)
-    if derr != nil {
-        log.Printf("rid=%s AdminDeleteUserContainer: slave delete request failed: %v", requestID, derr)
-        c.JSON(http.StatusBadGateway, gin.H{"error": "failed to communicate with node"})
-        return
+    payload := map[string]interface{}{
+        "user_id": userID,
+        "container_id": containerID,
+        "node_hostname": nodeHostname,
+        "username": username,
     }
-    defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
-        body, _ := io.ReadAll(resp.Body)
-        log.Printf("rid=%s AdminDeleteUserContainer: slave delete returned %d: %s", requestID, resp.StatusCode, string(body))
-        c.JSON(http.StatusBadGateway, gin.H{"error": "node failed to delete container"})
-        return
+    jb, _ := json.Marshal(payload)
+    var jobID int
+    if err := h.db.QueryRow(`INSERT INTO jobs (type, status, payload) VALUES ('delete_container','queued',$1) RETURNING id`, string(jb)).Scan(&jobID); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue job"}); return
     }
-    if rows, qerr := h.db.Query(`SELECT subdomain, subdomain_type FROM subdomains WHERE user_id = $1`, userID); qerr == nil {
-        defer rows.Close()
-        for rows.Next() {
-            var sub, subType string
-            if err := rows.Scan(&sub, &subType); err == nil {
-                if derr := h.dns.DeleteDNSRecord(sub, username, subType); derr != nil {
-                    log.Printf("rid=%s AdminDeleteUserContainer: DNS/Caddy cleanup failed for %s type=%s: %v", requestID, sub, subType, derr)
-                }
-            }
+    c.JSON(http.StatusOK, gin.H{"queued": true, "job_id": jobID})
+}
+
+func (h *Handler) AdminListJobs(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if !user.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+    limit := 50
+    if l := c.Query("limit"); l != "" {
+        if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 { limit = v }
+    }
+    rows, err := h.db.Query(`SELECT id, type, status, error, created_at, updated_at FROM jobs ORDER BY id DESC LIMIT $1`, limit)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    defer rows.Close()
+    type jobRow struct {
+        ID int `json:"id"`
+        Type string `json:"type"`
+        Status string `json:"status"`
+        Error *string `json:"error"`
+        CreatedAt time.Time `json:"created_at"`
+        UpdatedAt time.Time `json:"updated_at"`
+    }
+    var out []jobRow
+    for rows.Next() {
+        var j jobRow
+        if err := rows.Scan(&j.ID, &j.Type, &j.Status, &j.Error, &j.CreatedAt, &j.UpdatedAt); err == nil {
+            out = append(out, j)
         }
-        _, _ = h.db.Exec("DELETE FROM subdomains WHERE user_id = $1", userID)
     }
+    c.JSON(http.StatusOK, gin.H{"jobs": out})
+}
 
-    _, _ = h.db.Exec("DELETE FROM containers WHERE id = $1", containerID)
-    _, _ = h.db.Exec("UPDATE users SET container_id = NULL, updated_at = NOW() WHERE id = $1", userID)
-
-    c.JSON(http.StatusOK, gin.H{"message": "container deleted"})
+func (h *Handler) AdminGetJob(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if !user.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid job id"}); return }
+    var j struct {
+        ID int `json:"id"`
+        Type string `json:"type"`
+        Status string `json:"status"`
+        Error *string `json:"error"`
+        Result *string `json:"result"`
+        CreatedAt time.Time `json:"created_at"`
+        UpdatedAt time.Time `json:"updated_at"`
+    }
+    var resultBytes, errStr *string
+    err = h.db.QueryRow(`SELECT id, type, status, result, error, created_at, updated_at FROM jobs WHERE id=$1`, id).Scan(&j.ID, &j.Type, &j.Status, &resultBytes, &errStr, &j.CreatedAt, &j.UpdatedAt)
+    if err != nil { c.JSON(http.StatusNotFound, gin.H{"error": "job not found"}); return }
+    j.Result = resultBytes
+    j.Error = errStr
+    c.JSON(http.StatusOK, j)
 }
 
 func (h *Handler) DeleteUser(c *gin.Context) {
