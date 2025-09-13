@@ -499,6 +499,36 @@ func (h *Handler) ContainerStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, container)
 }
+func (h *Handler) ContainerStats(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "no container"})
+        return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id = n.id WHERE c.id = $1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+        return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    resp, err := http.Get(slaveURL+"/api/containers-stats/"+*user.ContainerID)
+    if err != nil {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"})
+        return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        c.JSON(http.StatusBadGateway, gin.H{"error": string(b)})
+        return
+    }
+    var stats map[string]interface{}
+    if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "invalid node response"})
+        return
+    }
+    c.JSON(http.StatusOK, stats)
+}
 
 func (h *Handler) GetNewPort(c *gin.Context) {
     user := c.MustGet("user").(*models.User)
@@ -540,88 +570,24 @@ func (h *Handler) GetNewPort(c *gin.Context) {
 
 func (h *Handler) CreateContainer(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
-    requestID := c.GetString("request_id")
-	
+	requestID := c.GetString("request_id")
+
 	if user.ContainerID != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "container already exists"})
 		return
 	}
-	
-	var nodeID int
-	var nodeHostname string
-    err := h.db.QueryRow(`
-		SELECT id, hostname FROM nodes 
-		WHERE is_online = true 
-		ORDER BY id LIMIT 1
-	`).Scan(&nodeID, &nodeHostname)
-	if err != nil {
-        log.Printf("rid=%s CreateContainer: no available nodes: %v", requestID, err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available nodes"})
-		return
-	}
-	slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
-    log.Printf("rid=%s CreateContainer: selected node id=%d host=%s url=%s for user id=%d username=%s", requestID, nodeID, nodeHostname, slaveURL, user.ID, user.Username)
+
 	payload := map[string]interface{}{
-		"user_id":   user.ID,
-		"username":  user.Username,
+		"user_id":  user.ID,
+		"username": user.Username,
 	}
-	
-	data, err := json.Marshal(payload)
-	if err != nil {
-        log.Printf("rid=%s CreateContainer: marshal payload error: %v", requestID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
+	jb, _ := json.Marshal(payload)
+	if _, err := h.db.Exec(`INSERT INTO jobs (type, status, payload) VALUES ('create_container','queued',$1)`, string(jb)); err != nil {
+		log.Printf("rid=%s CreateContainer: enqueue failed: %v", requestID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue job"})
 		return
 	}
-	
-	resp, err := http.Post(slaveURL+"/api/containers", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-        log.Printf("rid=%s CreateContainer: POST to slave failed: %v", requestID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to communicate with slave node"})
-		return
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusOK {
-        body, _ := io.ReadAll(resp.Body)
-        log.Printf("rid=%s CreateContainer: slave returned status=%d body=%s", requestID, resp.StatusCode, string(body))
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "slave node failed to create container"})
-		return
-	}
-	
-	var containerInfo map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&containerInfo); err != nil {
-        log.Printf("rid=%s CreateContainer: decode container info error: %v", requestID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to decode container info"})
-		return
-	}
-	containerID := containerInfo["ID"].(string)
-    var allocatedPorts []int
-	
-    _, err = h.db.Exec(`
-        INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports)
-        VALUES ($1, $2, $3, $4, 'running', $5, $6, $7, $8, $9, $10)
-	`, containerID, user.ID, nodeID, containerInfo["Name"], 
-		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15, pq.Array(allocatedPorts))
-	if err != nil {
-        log.Printf("rid=%s CreateContainer: DB insert error for container %s: %v", requestID, containerID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
-		return
-	}
-    _, err = h.db.Exec("UPDATE users SET container_id = $1 WHERE id = $2", containerID, user.ID)
-	if err != nil {
-        log.Printf("rid=%s CreateContainer: DB update user %d with container %s failed: %v", requestID, user.ID, containerID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
-		return
-	}
-	
-    log.Printf("rid=%s CreateContainer: success container_id=%s ip=%v ssh_port=%v ports=%v", requestID, containerID, containerInfo["IP"], containerInfo["SSHPort"], allocatedPorts)
-	c.JSON(http.StatusOK, gin.H{
-		"message":        "Container created successfully",
-		"container_id":   containerID,
-		"ip_address":     containerInfo["IP"],
-		"allocated_ports": allocatedPorts,
-		"ssh_port":     containerInfo["SSHPort"],
-	})
+	c.JSON(http.StatusOK, gin.H{"queued": true})
 }
 
 func (h *Handler) SubdomainManagement(c *gin.Context) {

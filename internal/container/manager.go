@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"encoding/json"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -28,6 +29,15 @@ type ContainerInfo struct {
 	IP             string
 	SSHPort        int
 	AllocatedPorts []int
+}
+
+type ContainerStats struct {
+    CPUUsageNanoseconds   uint64 `json:"cpu_usage_ns"`
+    MemoryUsageBytes      uint64 `json:"memory_usage_bytes"`
+    MemoryTotalBytes      uint64 `json:"memory_total_bytes"`
+    DiskUsageBytes        uint64 `json:"disk_usage_bytes"`
+    NetworkRXBytes        uint64 `json:"network_rx_bytes"`
+    NetworkTXBytes        uint64 `json:"network_tx_bytes"`
 }
 
 func NewManager(publicHostname string) (*Manager, error) {
@@ -261,6 +271,43 @@ func (m *Manager) GetContainerStatus(containerID string) (string, error) {
 	}
 
 	return "unknown", nil
+}
+
+func (m *Manager) GetContainerStats(containerID string) (*ContainerStats, error) {
+    cmd := exec.Command("lxc", "query", fmt.Sprintf("/1.0/instances/%s/state", containerID))
+    output, err := cmd.Output()
+    if err != nil {
+        return nil, fmt.Errorf("failed to query container state: %w", err)
+    }
+    var state struct {
+        CPU struct { Usage uint64 `json:"usage"` } `json:"cpu"`
+        Memory struct { Usage uint64 `json:"usage"`; UsagePeak uint64 `json:"usage_peak"`; SwapUsage uint64 `json:"swap_usage"`; SwapUsagePeak uint64 `json:"swap_usage_peak"`; Total uint64 `json:"total"` } `json:"memory"`
+        Disk map[string]struct{ Usage uint64 `json:"usage"` } `json:"disk"`
+        Network map[string]struct{ Counters struct{ BytesReceived uint64 `json:"bytes_received"`; BytesSent uint64 `json:"bytes_sent"` } `json:"counters"` } `json:"network"`
+    }
+    if err := json.Unmarshal(output, &state); err != nil {
+        return nil, fmt.Errorf("failed to parse state: %w", err)
+    }
+    var diskUsage uint64
+    for _, d := range state.Disk {
+        diskUsage += d.Usage
+    }
+    var rx, tx uint64
+    for name, n := range state.Network {
+        // skip loopback
+        if strings.HasPrefix(name, "lo") { continue }
+        rx += n.Counters.BytesReceived
+        tx += n.Counters.BytesSent
+    }
+    stats := &ContainerStats{
+        CPUUsageNanoseconds: state.CPU.Usage,
+        MemoryUsageBytes:    state.Memory.Usage,
+        MemoryTotalBytes:    state.Memory.Total,
+        DiskUsageBytes:      diskUsage,
+        NetworkRXBytes:      rx,
+        NetworkTXBytes:      tx,
+    }
+    return stats, nil
 }
 
 func (m *Manager) DeleteContainer(containerID string) error {

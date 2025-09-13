@@ -14,6 +14,8 @@
 	let toastContainer
 	let containerCreating = false
 	let creationProgress = 0
+	let stats = null
+	let statsTimer = null
 
 	async function createContainer() {
 		containerCreating = true
@@ -37,13 +39,11 @@
 				return
 			}
 			
-			// Container creation started successfully
 			creationProgress = 80
 			toastContainer.addToast('Environment creation started! This may take a few minutes...', 'success')
 			
-			// Simulate progress and check for completion
 			let checkAttempts = 0
-			const maxAttempts = 30 // 5 minutes max
+			const maxAttempts = 30
 			
 			const checkStatus = async () => {
 				try {
@@ -121,6 +121,22 @@
 		}
 		toastContainer.addToast('Subdomain deleted successfully!', 'success')
 		setTimeout(() => location.reload(), 1000)
+	}
+
+	async function pollStats() {
+		if (!container) return
+		try {
+			const res = await fetch('/user/container/stats')
+			if (!res.ok) return
+			stats = await res.json()
+		} catch (e) {
+		}
+	}
+
+	$: if (container) {
+		clearInterval(statsTimer)
+		pollStats()
+		statsTimer = setInterval(pollStats, 5000)
 	}
 </script>
 
@@ -250,6 +266,31 @@
 									</div>
 								{:else}
 									<p class="text-foreground/70 text-sm">No ports allocated yet</p>
+								{/if}
+							</div>
+							<div>
+								<h3 class="font-heading mb-3">Live Stats</h3>
+								{#if stats}
+									<div class="grid grid-cols-2 gap-3">
+										<div class="bg-background border-2 border-border p-3">
+											<div class="text-sm text-foreground/70">CPU</div>
+											<div class="font-mono">{Math.round((stats.cpu_usage_ns || 0) / 1e7) / 100}%</div>
+										</div>
+										<div class="bg-background border-2 border-border p-3">
+											<div class="text-sm text-foreground/70">Memory</div>
+											<div class="font-mono">{Math.round(((stats.memory_usage_bytes||0) / 1024 / 1024) * 10) / 10} MB</div>
+										</div>
+										<div class="bg-background border-2 border-border p-3">
+											<div class="text-sm text-foreground/70">Disk</div>
+											<div class="font-mono">{Math.round(((stats.disk_usage_bytes||0) / 1024 / 1024) * 10) / 10} MB</div>
+										</div>
+										<div class="bg-background border-2 border-border p-3">
+											<div class="text-sm text-foreground/70">Net RX / TX</div>
+											<div class="font-mono">{Math.round(((stats.network_rx_bytes||0) / 1024 / 1024) * 10) / 10} / {Math.round(((stats.network_tx_bytes||0) / 1024 / 1024) * 10) / 10} MB</div>
+										</div>
+									</div>
+								{:else}
+									<p class="text-foreground/70 text-sm">collecting stats...</p>
 								{/if}
 							</div>
 						</div>

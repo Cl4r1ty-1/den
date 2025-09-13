@@ -247,6 +247,7 @@ func (s *Slave) startAPIServer() {
 	// fuck this shit i'm out
 	mux.HandleFunc("/api/containers", s.handleCreateContainer)
     mux.HandleFunc("/api/containers/", s.handleContainerOperations)
+    mux.HandleFunc("/api/containers-stats/", s.handleContainerStats)
     mux.HandleFunc("/api/control/containers/", s.handleControlContainer)
     mux.HandleFunc("/api/export", s.handleExportContainer)
 	mux.HandleFunc("/api/ports", s.handlePortMapping)
@@ -375,6 +376,26 @@ func (s *Slave) handleContainerOperations(w http.ResponseWriter, r *http.Request
 		}
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+func (s *Slave) handleContainerStats(w http.ResponseWriter, r *http.Request) {
+    parts := strings.Split(r.URL.Path, "/")
+    if len(parts) < 4 {
+        http.Error(w, "invalid path", http.StatusBadRequest)
+        return
+    }
+    containerID := parts[3]
+    if r.Method != http.MethodGet {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    stats, err := s.manager.GetContainerStats(containerID)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(stats)
 }
 func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
     parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")

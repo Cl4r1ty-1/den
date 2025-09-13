@@ -26,6 +26,7 @@ import (
 	"github.com/joho/godotenv"
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/lib/pq"
 )
 
 func Run() error {
@@ -141,6 +142,8 @@ func runJobOnce(db *database.DB) error {
     switch jtype {
     case "export_container":
         return handleExportJob(db, id, []byte(payloadStr))
+    case "create_container":
+        return handleCreateContainerJob(db, id, []byte(payloadStr))
     default:
         _, _ = db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, id, "unknown job type")
         return nil
@@ -189,6 +192,62 @@ func finalizeJob(db *database.DB, jobID int, success bool, errMsg string, result
     }
     _, err := db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, jobID, errMsg)
     return err
+}
+
+func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error {
+    var p struct {
+        UserID   int    `json:"user_id"`
+        Username string `json:"username"`
+    }
+    if err := json.Unmarshal(payload, &p); err != nil { return finalizeJob(db, jobID, false, "invalid payload", nil) }
+
+    var nodeID int
+    var nodeHostname string
+    if err := db.QueryRow(`SELECT id, hostname FROM nodes WHERE is_online = true ORDER BY id LIMIT 1`).Scan(&nodeID, &nodeHostname); err != nil {
+        return finalizeJob(db, jobID, false, "no available nodes", nil)
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+
+    reqBody, _ := json.Marshal(map[string]interface{}{ "user_id": p.UserID, "username": p.Username })
+    resp, err := http.Post(slaveURL+"/api/containers", "application/json", bytes.NewBuffer(reqBody))
+    if err != nil {
+        return finalizeJob(db, jobID, false, err.Error(), nil)
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        return finalizeJob(db, jobID, false, string(b), nil)
+    }
+    var containerInfo map[string]interface{}
+    if err := json.NewDecoder(resp.Body).Decode(&containerInfo); err != nil {
+        return finalizeJob(db, jobID, false, "decode response failed", nil)
+    }
+
+    containerID, _ := containerInfo["ID"].(string)
+    name, _ := containerInfo["Name"].(string)
+    ipAny, _ := containerInfo["IP"]
+    sshPortAny, _ := containerInfo["SSHPort"]
+    var ip *string
+    if s, ok := ipAny.(string); ok { ip = &s }
+    sshPort := 0
+    switch v := sshPortAny.(type) {
+    case float64:
+        sshPort = int(v)
+    case int:
+        sshPort = v
+    }
+
+    if _, err := db.Exec(`INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports) VALUES ($1,$2,$3,$4,'running',$5,$6,4096,4,15,$7)`,
+        containerID, p.UserID, nodeID, name, ip, sshPort, pq.Array([]int{})); err != nil {
+        return finalizeJob(db, jobID, false, "db insert failed", nil)
+    }
+    if _, err := db.Exec(`UPDATE users SET container_id = $1, updated_at = NOW() WHERE id = $2`, containerID, p.UserID); err != nil {
+        return finalizeJob(db, jobID, false, "db update user failed", nil)
+    }
+
+    res := map[string]interface{}{ "container_id": containerID, "ip_address": ip, "ssh_port": sshPort }
+    rb, _ := json.Marshal(res)
+    return finalizeJob(db, jobID, true, "", rb)
 }
 
 func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
@@ -260,6 +319,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.POST("/aup/accept", h.AUPAccept)
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
+		userGroup.GET("/container/stats", h.ContainerStats)
 		userGroup.POST("/container/create", h.CreateContainer)
 		userGroup.POST("/container/ports/new", h.GetNewPort)
 		userGroup.GET("/subdomains", h.SubdomainManagement)
