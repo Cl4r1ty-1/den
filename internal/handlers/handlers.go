@@ -1405,3 +1405,50 @@ func (h *Handler) APINodeHeartbeat(c *gin.Context) {
 	
     c.JSON(http.StatusOK, gin.H{"message": "heartbeat received", "containers": count})
 }
+
+func (h *Handler) GetContainerShell(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	if user.ContainerID == nil || *user.ContainerID == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+		return
+	}
+	var nodeHostname string
+	err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+		return
+	}
+	slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, *user.ContainerID)
+	body := map[string]interface{}{"action": "get_shell", "username": user.Username}
+	bb, _ := json.Marshal(body)
+	resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+	if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, "application/json", b)
+}
+
+func (h *Handler) SetContainerShell(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	if user.ContainerID == nil || *user.ContainerID == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+		return
+	}
+	var req struct{ Shell string `json:"shell" binding:"required"` }
+	if err := c.ShouldBindJSON(&req); err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()}); return }
+	if req.Shell != "bash" && req.Shell != "zsh" && req.Shell != "fish" { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid shell"}); return }
+	var nodeHostname string
+	err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+		return
+	}
+	slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, *user.ContainerID)
+	body := map[string]interface{}{"action": "set_shell", "shell": req.Shell, "username": user.Username}
+	bb, _ := json.Marshal(body)
+	resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+	if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, "application/json", b)
+}

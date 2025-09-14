@@ -151,7 +151,7 @@
 	onMount(async () => {
 		if (!container) return
 		try {
-			const res = await fetch(`/api/control/containers/${(container as any).id || ''}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_shell', username: user.username }) })
+			const res = await fetch(`/user/container/shell`)
 			if (res.ok) {
 				const data = await res.json()
 				const path = (data.shell || '').split('/').pop()
@@ -163,7 +163,7 @@
 	async function setShell() {
 		if (!container) return
 		try {
-			const res = await fetch(`/api/control/containers/${(container as any).id || ''}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_shell', shell: selectedShell, username: user.username }) })
+			const res = await fetch(`/user/container/shell`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shell: selectedShell }) })
 			if (!res.ok) { const t = await res.text(); toastContainer.addToast(`Failed to set shell: ${t}`, 'danger'); return }
 			toastContainer.addToast(`Default shell set to ${selectedShell}`, 'success')
 		} catch (e) {

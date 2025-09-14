@@ -379,6 +379,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/dashboard", h.UserDashboard)
 		userGroup.GET("/container", h.ContainerStatus)
 		userGroup.GET("/container/stats", h.ContainerStats)
+		userGroup.GET("/container/shell", h.GetContainerShell)
+		userGroup.POST("/container/shell", h.SetContainerShell)
 		userGroup.POST("/container/create", h.CreateContainer)
 		userGroup.POST("/container/ports/new", h.GetNewPort)
 		userGroup.GET("/subdomains", h.SubdomainManagement)
