@@ -3,9 +3,24 @@
 		window.location.href = '/auth/github' 
 	}
 	export let user = null
+
+	function toggleTheme() {
+		const root = document.documentElement
+		const isDark = root.classList.toggle('dark')
+		try { localStorage.setItem('theme', isDark ? 'dark' : 'light') } catch (_) {}
+	}
 </script>
 
 <div class="min-h-screen bg-background text-foreground">
+	<button 
+		class="fixed top-4 right-4 z-50 flex items-center justify-center w-10 h-10 bg-secondary-background text-foreground border-2 border-border hover:translate-x-1 hover:translate-y-1 transition-transform"
+		on:click={toggleTheme}
+		aria-label="Toggle dark mode"
+	>
+		<svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+			<path d="M21.64 13.64A9 9 0 1110.36 2.36 7 7 0 0021.64 13.64z" />
+		</svg>
+	</button>
 	<main class="flex items-center justify-center min-h-screen p-6">
 		<div class="max-w-4xl text-center">
 			<div class="mb-12">
