@@ -17,6 +17,8 @@
 	let activeTab = 'nodes'
 	let jobs = []
 	let jobsTimer = null
+	let showJobModal = false
+	let jobDetail = null
 
 	async function loadNodes() {
 		const res = await fetch('/admin/nodes')
@@ -139,6 +141,14 @@
 			clearInterval(jobsTimer)
 			jobsTimer = setInterval(loadJobs, 5000)
 		}
+	}
+
+	async function openJob(jobId) {
+		try {
+			const r = await fetch(`/admin/jobs/${jobId}`)
+			jobDetail = await r.json()
+			showJobModal = true
+		} catch (_) {}
 	}
 
 	loadNodes()
@@ -391,7 +401,7 @@
 							</thead>
 							<tbody>
 								{#each jobs as j}
-									<tr>
+									<tr class="cursor-pointer hover:bg-foreground/5" on:click={() => openJob(j.id)}>
 										<td class="border-2 border-border p-2 font-mono">{j.id}</td>
 										<td class="border-2 border-border p-2">{j.type}</td>
 										<td class="border-2 border-border p-2">
@@ -418,32 +428,32 @@
 	<form on:submit|preventDefault={createNode} class="space-y-4">
 		<div class="grid md:grid-cols-2 gap-4">
 			<div>
-				<label class="block text-sm font-heading mb-2">node name</label>
-				<input type="text" bind:value={newNode.name} required class="w-full bg-background border-2 border-border p-3" placeholder="node-1">
+				<label class="block text-sm font-heading mb-2" for="node_name">node name</label>
+				<input id="node_name" type="text" bind:value={newNode.name} required class="w-full bg-background border-2 border-border p-3" placeholder="node-1">
 			</div>
 			<div>
-				<label class="block text-sm font-heading mb-2">internal hostname</label>
-				<input type="text" bind:value={newNode.hostname} required class="w-full bg-background border-2 border-border p-3" placeholder="192.168.1.100">
+				<label class="block text-sm font-heading mb-2" for="node_hostname">internal hostname</label>
+				<input id="node_hostname" type="text" bind:value={newNode.hostname} required class="w-full bg-background border-2 border-border p-3" placeholder="192.168.1.100">
 			</div>
 		</div>
 		
 		<div>
-			<label class="block text-sm font-heading mb-2">public hostname (optional)</label>
-			<input type="text" bind:value={newNode.public_hostname} class="w-full bg-background border-2 border-border p-3" placeholder="node1.den.dev">
+			<label class="block text-sm font-heading mb-2" for="node_public_hostname">public hostname (optional)</label>
+			<input id="node_public_hostname" type="text" bind:value={newNode.public_hostname} class="w-full bg-background border-2 border-border p-3" placeholder="node1.den.dev">
 		</div>
 		
 		<div class="grid grid-cols-3 gap-4">
 			<div>
-				<label class="block text-sm font-heading mb-2">memory (MB)</label>
-				<input type="number" bind:value={newNode.max_memory_mb} class="w-full bg-background border-2 border-border p-3">
+				<label class="block text-sm font-heading mb-2" for="node_mem">memory (MB)</label>
+				<input id="node_mem" type="number" bind:value={newNode.max_memory_mb} class="w-full bg-background border-2 border-border p-3">
 			</div>
 			<div>
-				<label class="block text-sm font-heading mb-2">cpu cores</label>
-				<input type="number" bind:value={newNode.max_cpu_cores} class="w-full bg-background border-2 border-border p-3">
+				<label class="block text-sm font-heading mb-2" for="node_cores">cpu cores</label>
+				<input id="node_cores" type="number" bind:value={newNode.max_cpu_cores} class="w-full bg-background border-2 border-border p-3">
 			</div>
 			<div>
-				<label class="block text-sm font-heading mb-2">storage (GB)</label>
-				<input type="number" bind:value={newNode.max_storage_gb} class="w-full bg-background border-2 border-border p-3">
+				<label class="block text-sm font-heading mb-2" for="node_storage">storage (GB)</label>
+				<input id="node_storage" type="number" bind:value={newNode.max_storage_gb} class="w-full bg-background border-2 border-border p-3">
 			</div>
 		</div>
 	</form>
@@ -489,6 +499,25 @@
 			close
 		</button>
 	</div>
+</Modal>
+
+<Modal show={showJobModal} title="Job Details" onClose={() => showJobModal = false}>
+	{#if jobDetail}
+		<div class="space-y-3">
+			<div><span class="font-heading">id:</span> <span class="font-mono">{jobDetail.id}</span></div>
+			<div><span class="font-heading">type:</span> {jobDetail.type}</div>
+			<div><span class="font-heading">status:</span> {jobDetail.status}</div>
+			{#if jobDetail.error}
+				<div class="text-chart-1"><span class="font-heading">error:</span> <span class="font-mono break-all">{jobDetail.error}</span></div>
+			{/if}
+			{#if jobDetail.result}
+				<div><span class="font-heading">result:</span> <pre class="bg-background border-2 border-border p-2 overflow-auto text-xs">{jobDetail.result}</pre></div>
+			{/if}
+			<div class="text-sm text-foreground/70">created: {new Date(jobDetail.created_at).toLocaleString()} | updated: {new Date(jobDetail.updated_at).toLocaleString()}</div>
+		</div>
+	{:else}
+		<p>Loading…</p>
+	{/if}
 </Modal>
 
 <ToastContainer bind:this={toastContainer} />

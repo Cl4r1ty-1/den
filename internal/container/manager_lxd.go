@@ -214,9 +214,12 @@ func (m *ManagerLXD) DeleteContainer(containerID string) error {
 
 	deleteCmd := exec.CommandContext(ctx, "lxc", "delete", containerID, "--force")
 	if err := deleteCmd.Run(); err != nil {
+		check := exec.CommandContext(ctx, "lxc", "info", containerID)
+		if _, ierr := check.Output(); ierr != nil {
+			return nil
+		}
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
-
 	return nil
 }
 

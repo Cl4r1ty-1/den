@@ -13,20 +13,21 @@ import (
 	"html/template"
 	"syscall"
 	"time"
-    "crypto/rand"
-    "encoding/hex"
+	crand "crypto/rand"
+	"encoding/hex"
+	"math"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
 	"github.com/den/internal/dns"
 	"github.com/den/internal/handlers"
-    "github.com/den/internal/storage"
+	"github.com/den/internal/storage"
 	"github.com/den/internal/ssh"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/lib/pq"
 )
 
 func Run() error {
@@ -188,12 +189,23 @@ func handleExportJob(db *database.DB, jobID int, payload []byte) error {
 }
 
 func finalizeJob(db *database.DB, jobID int, success bool, errMsg string, result []byte) error {
-    if success {
-        _, err := db.Exec(`UPDATE jobs SET status='success', result=$2, updated_at=NOW() WHERE id=$1`, jobID, string(result))
-        return err
-    }
-    _, err := db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, jobID, errMsg)
-    return err
+	if success {
+		_, err := db.Exec(`UPDATE jobs SET status='success', result=$2, updated_at=NOW() WHERE id=$1`, jobID, string(result))
+		return err
+	}
+	var attempts, maxAttempts int
+	if err := db.QueryRow(`SELECT attempts, COALESCE(max_attempts, 0) FROM jobs WHERE id=$1`, jobID).Scan(&attempts, &maxAttempts); err == nil {
+		if maxAttempts == 0 { maxAttempts = 3 }
+		if attempts < maxAttempts {
+			backoff := int(math.Pow(2, float64(attempts-1)) * 5)
+			if backoff > 300 { backoff = 300 }
+			delay := time.Duration(backoff) * time.Second
+			_, _ = db.Exec(`UPDATE jobs SET status='queued', run_after=NOW()+($2::interval), error=$3, updated_at=NOW() WHERE id=$1`, jobID, fmt.Sprintf("%d seconds", int(delay.Seconds())), errMsg)
+			return nil
+		}
+	}
+	_, err := db.Exec(`UPDATE jobs SET status='failed', error=$2, updated_at=NOW() WHERE id=$1`, jobID, errMsg)
+	return err
 }
 
 func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error {
@@ -279,6 +291,7 @@ func handleDeleteContainerJob(db *database.DB, jobID int, payload []byte) error 
         for rows.Next() {
             var sub, subType string
             if err := rows.Scan(&sub, &subType); err == nil {
+                _ = dns.NewService().DeleteDNSRecord(sub, p.Username, subType)
             }
         }
         _, _ = db.Exec("DELETE FROM subdomains WHERE user_id = $1", p.UserID)
@@ -313,11 +326,17 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
             time.Sleep(15 * time.Second)
         }
     }()
+    go func(){
+        for {
+            _, _ = db.Exec("UPDATE nodes SET is_online=false WHERE last_seen < NOW() - INTERVAL '90 seconds'")
+            time.Sleep(30 * time.Second)
+        }
+    }()
     r.GET("/metrics", gin.WrapH(promhttp.Handler()))
     r.GET("/healthz", func(c *gin.Context){ c.JSON(http.StatusOK, gin.H{"ok": true}) })
     r.Use(func(c *gin.Context) {
         b := make([]byte, 8)
-        if _, err := rand.Read(b); err == nil {
+        if _, err := crand.Read(b); err == nil {
             rid := hex.EncodeToString(b)
             c.Set("request_id", rid)
             c.Writer.Header().Set("X-Request-ID", rid)

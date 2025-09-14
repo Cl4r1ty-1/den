@@ -1,21 +1,23 @@
-<script>
+<script lang="ts">
 	import Header from '../lib/Header.svelte'
 	import Modal from '../lib/Modal.svelte'
 	import ToastContainer from '../lib/ToastContainer.svelte'
 	
-	export let user
-	export let container = null
-	export let subdomains = []
+	type Container = { allocated_ports?: number[]; status?: string }
+	type Subdomain = { id: number; subdomain: string; target_port: number; subdomain_type: 'project'|'username' }
+	export let user: { display_name: string; username: string }
+	export let container: Container | null = null
+	export let subdomains: Subdomain[] = []
 
 
 	let showSubdomainModal = false
 	let showContainerModal = false
-	let newSubdomain = { subdomain: '', target_port: '', subdomain_type: 'project' }
-	let toastContainer
+	let newSubdomain: { subdomain: string; target_port: string|number; subdomain_type: 'project'|'username' } = { subdomain: '', target_port: '', subdomain_type: 'project' }
+	let toastContainer: any
 	let containerCreating = false
 	let creationProgress = 0
-	let stats = null
-	let statsTimer = null
+	let stats: any = null
+	let statsTimer: any = null
 
 	$: if (newSubdomain.subdomain_type === 'username') {
 		newSubdomain.subdomain = user?.username || ''
@@ -114,7 +116,7 @@
 		setTimeout(() => location.reload(), 1000)
 	}
 
-	async function deleteSubdomain(id) {
+	async function deleteSubdomain(id: number) {
 		if (!confirm('Are you sure you want to delete this subdomain?')) return
 		
 		const res = await fetch(`/user/subdomains/${id}`, { method: 'DELETE' })
@@ -140,6 +142,7 @@
 	$: if (container) {
 		clearInterval(statsTimer)
 		pollStats()
+		// @ts-ignore
 		statsTimer = setInterval(pollStats, 5000)
 	}
 </script>
@@ -438,8 +441,8 @@
 <Modal show={showSubdomainModal} title="Add Subdomain" onClose={() => showSubdomainModal = false}>
 	<form on:submit|preventDefault={createSubdomain} class="space-y-4">
 		<div>
-			<label class="block text-sm font-heading mb-2">subdomain type</label>
-			<div class="space-y-2">
+			<label class="block text-sm font-heading mb-2" for="sd_type">subdomain type</label>
+			<div class="space-y-2" id="sd_type">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="project" class="w-4 h-4">
 					<span>project subdomain (myapp.{user.username}.hack.kim)</span>
@@ -453,30 +456,24 @@
 		
 		{#if newSubdomain.subdomain_type === 'username'}
 			<div>
-				<label class="block text-sm font-heading mb-2">domain</label>
-				<div class="w-full bg-background border-2 border-border p-3">
+				<label class="block text-sm font-heading mb-2" for="sd_domain">domain</label>
+				<div id="sd_domain" class="w-full bg-background border-2 border-border p-3">
 					your project will be on <span class="font-mono font-bold">{user.username}.hack.kim</span>
 				</div>
 			</div>
 		{:else}
 			<div>
-				<label class="block text-sm font-heading mb-2">subdomain name</label>
-				<input 
-					type="text" 
-					bind:value={newSubdomain.subdomain} 
-					required={newSubdomain.subdomain_type !== 'username'} 
-					class="w-full bg-background border-2 border-border p-3 font-mono"
-					placeholder="myapp"
-				>
+				<label class="block text-sm font-heading mb-2" for="sd_name">subdomain name</label>
+				<input id="sd_name" type="text" bind:value={newSubdomain.subdomain} required class="w-full bg-background border-2 border-border p-3 font-mono" placeholder="my-app">
 				<div class="text-xs text-foreground/70 mt-1">
 					preview: {newSubdomain.subdomain || 'myapp'}.{user.username}.hack.kim
-		</div>
-	</div>
-{/if}
+				</div>
+			</div>
+		{/if}
 
 		<div>
-			<label class="block text-sm font-heading mb-2">target port</label>
-			<select bind:value={newSubdomain.target_port} required class="w-full bg-background border-2 border-border p-3">
+			<label class="block text-sm font-heading mb-2" for="sd_port">target port</label>
+			<select id="sd_port" bind:value={newSubdomain.target_port} required class="w-full bg-background border-2 border-border p-3">
 				<option value="">select a port</option>
 				{#if container?.allocated_ports}
 					{#each container.allocated_ports as port}

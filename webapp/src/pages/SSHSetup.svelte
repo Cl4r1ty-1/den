@@ -147,25 +147,13 @@
 				
 				<form on:submit|preventDefault={savePassword} class="space-y-6">
 					<div>
-						<label class="block text-sm font-heading mb-2">password</label>
-						<input 
-							type="password" 
-							bind:value={password}
-							placeholder="enter a strong password"
-							class="w-full bg-background border-2 border-border p-3"
-							required
-						>
+						<label class="block text-sm font-heading mb-2" for="ssh_password">password</label>
+						<input id="ssh_password" type="password" bind:value={password} class="w-full bg-background border-2 border-border p-3">
 					</div>
 					
 					<div>
-						<label class="block text-sm font-heading mb-2">confirm password</label>
-						<input 
-							type="password" 
-							bind:value={confirmPassword}
-							placeholder="confirm your password"
-							class="w-full bg-background border-2 border-border p-3"
-							required
-						>
+						<label class="block text-sm font-heading mb-2" for="ssh_password_confirm">confirm password</label>
+						<input id="ssh_password_confirm" type="password" bind:value={confirmPassword} class="w-full bg-background border-2 border-border p-3">
 					</div>
 					
 					<button type="submit" class="bg-main text-main-foreground border-2 border-border px-6 py-3 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow flex items-center gap-2">
@@ -198,14 +186,8 @@
 				
 				<form on:submit|preventDefault={savePublicKey} class="space-y-6">
 					<div>
-						<label class="block text-sm font-heading mb-2">ssh public key</label>
-						<textarea 
-							bind:value={publicKey}
-							placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your@email.com"
-							class="w-full bg-background border-2 border-border p-3 font-mono"
-							rows="4"
-							required
-						></textarea>
+						<label class="block text-sm font-heading mb-2" for="ssh_public_key">ssh public key</label>
+						<textarea id="ssh_public_key" bind:value={publicKey} class="w-full bg-background border-2 border-border p-3 font-mono" rows="6"></textarea>
 						<p class="text-sm text-foreground/70 mt-2">
 							paste your public key here. it should start with <code class="font-mono">ssh-ed25519</code> or <code class="font-mono">ssh-rsa</code>
 						</p>

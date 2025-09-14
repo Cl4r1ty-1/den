@@ -21,6 +21,15 @@ import (
     "runtime"
 )
 
+var (
+	opCreateTotal = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "den_slave_op_create_total", Help: "Create operations"}, []string{"result"})
+	opDeleteTotal = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "den_slave_op_delete_total", Help: "Delete operations"}, []string{"result"})
+	opControlTotal = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "den_slave_op_control_total", Help: "Control operations"}, []string{"action","result"})
+	opStatsTotal   = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "den_slave_op_stats_total", Help: "Stats fetches"}, []string{"result"})
+	opExportTotal  = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "den_slave_op_export_total", Help: "Export operations"}, []string{"result"})
+	opDuration     = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "den_slave_op_duration_seconds", Help: "Operation durations"}, []string{"op"})
+)
+
 type Config struct {
 	MasterURL      string `json:"master_url"`
 	NodeToken      string `json:"node_token"`
@@ -243,6 +252,7 @@ func (s *Slave) updateContainerStatus() error {
 }
 
 func (s *Slave) startAPIServer() {
+	prometheus.MustRegister(opCreateTotal, opDeleteTotal, opControlTotal, opStatsTotal, opExportTotal, opDuration)
 	mux := http.NewServeMux()
     mux.Handle("/metrics", promhttp.Handler())
     mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(http.StatusOK); w.Write([]byte("ok")) })
@@ -305,6 +315,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
     if req.ContainerID == "" || req.PutURL == "" { http.Error(w, "missing fields", http.StatusBadRequest); return }
 
+    start := time.Now(); defer func(){ opDuration.WithLabelValues("export").Observe(time.Since(start).Seconds()) }()
     log.Printf("export:start container=%s", req.ContainerID)
 
     sanitized := strings.ReplaceAll(req.ContainerID, "/", "-")
@@ -315,6 +326,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     exportCmd.Stdout = &exportOut
     exportCmd.Stderr = &exportOut
     if err := exportCmd.Run(); err != nil {
+        opExportTotal.WithLabelValues("fail").Inc()
         log.Printf("export:fail container=%s error=%v out=%q", req.ContainerID, err, exportOut.String())
         http.Error(w, "export failed: "+exportOut.String(), http.StatusInternalServerError); return
     }
@@ -328,6 +340,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     untar.Stdout = &untarOut
     untar.Stderr = &untarOut
     if err := untar.Run(); err != nil {
+        opExportTotal.WithLabelValues("fail").Inc()
         os.RemoveAll(workDir); os.Remove(tmpPath)
         log.Printf("export:unpack_fail container=%s error=%v out=%q", req.ContainerID, err, untarOut.String())
         http.Error(w, "unpack failed: "+untarOut.String(), http.StatusInternalServerError); return
@@ -339,6 +352,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     retar.Stdout = &retarOut
     retar.Stderr = &retarOut
     if err := retar.Run(); err != nil {
+        opExportTotal.WithLabelValues("fail").Inc()
         os.RemoveAll(workDir); os.Remove(tmpPath)
         log.Printf("export:repack_fail container=%s error=%v out=%q", req.ContainerID, err, retarOut.String())
         http.Error(w, "repack failed: "+retarOut.String(), http.StatusInternalServerError); return
@@ -354,19 +368,19 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     curl.Stdout = &curlOut
     curl.Stderr = &curlOut
     if err := curl.Run(); err != nil {
+        opExportTotal.WithLabelValues("fail").Inc()
         log.Printf("export:upload_fail container=%s error=%v out=%q", req.ContainerID, err, curlOut.String())
         http.Error(w, "upload failed: "+curlOut.String(), http.StatusBadGateway); return
     }
     fi, _ := os.Stat(uploadPath)
     _ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "size": func() int64 { if fi!=nil { return fi.Size() } ; return 0 }()})
+    opExportTotal.WithLabelValues("success").Inc()
     log.Printf("export:done container=%s size=%d", req.ContainerID, func() int64 { if fi!=nil { return fi.Size() } ; return 0 }())
 }
 
 func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+	start := time.Now(); defer func(){ opDuration.WithLabelValues("create").Observe(time.Since(start).Seconds()) }()
 	
 	var req struct {
 		UserID   int    `json:"user_id"`
@@ -381,10 +395,11 @@ func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("create:start user=%d username=%s", req.UserID, req.Username)
 	container, err := s.manager.CreateContainer(req.UserID, req.Username)
 	if err != nil {
+		opCreateTotal.WithLabelValues("fail").Inc()
 		log.Printf("create:fail user=%d username=%s error=%v", req.UserID, req.Username, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		http.Error(w, err.Error(), http.StatusInternalServerError); return
 	}
+	opCreateTotal.WithLabelValues("success").Inc()
 	log.Printf("create:done user=%d username=%s id=%s ip=%s", req.UserID, req.Username, container.ID, container.IP)
 	
 	json.NewEncoder(w).Encode(container)
@@ -410,11 +425,14 @@ func (s *Slave) handleContainerOperations(w http.ResponseWriter, r *http.Request
 		
 	case http.MethodDelete:
 		log.Printf("delete:start id=%s", containerID)
+		opDeleteTotal.WithLabelValues("start").Inc()
 		go func(id string) {
 			if err := s.manager.DeleteContainer(id); err != nil {
+				opDeleteTotal.WithLabelValues("fail").Inc()
 				log.Printf("delete:fail id=%s error=%v", id, err)
 				return
 			}
+			opDeleteTotal.WithLabelValues("success").Inc()
 			log.Printf("delete:done id=%s", id)
 		}(containerID)
 		w.WriteHeader(http.StatusAccepted)
@@ -432,14 +450,16 @@ func (s *Slave) handleContainerStats(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         return
     }
+    start := time.Now(); defer func(){ opDuration.WithLabelValues("stats").Observe(time.Since(start).Seconds()) }()
     log.Printf("stats:get id=%s", containerID)
     stats, err := s.manager.GetContainerStats(containerID)
     if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
+        opStatsTotal.WithLabelValues("fail").Inc()
+        http.Error(w, err.Error(), http.StatusInternalServerError); return
     }
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(stats)
+    opStatsTotal.WithLabelValues("success").Inc()
 }
 func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
     parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
@@ -457,25 +477,18 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "invalid request", http.StatusBadRequest)
         return
     }
+    start := time.Now(); defer func(){ opDuration.WithLabelValues("control").Observe(time.Since(start).Seconds()) }()
     log.Printf("control:start id=%s action=%s", containerID, req.Action)
     switch strings.ToLower(req.Action) {
     case "stop", "pause":
-        if err := s.manager.StopContainer(containerID); err != nil {
-            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
-            http.Error(w, err.Error(), http.StatusInternalServerError)
-            return
-        }
+        if err := s.manager.StopContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
     case "start", "resume":
-        if err := s.manager.StartContainer(containerID); err != nil {
-            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
-            http.Error(w, err.Error(), http.StatusInternalServerError)
-            return
-        }
+        if err := s.manager.StartContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
     default:
-        http.Error(w, "unknown action", http.StatusBadRequest)
-        return
+        http.Error(w, "unknown action", http.StatusBadRequest); return
     }
     w.WriteHeader(http.StatusOK)
+    opControlTotal.WithLabelValues(strings.ToLower(req.Action), "success").Inc()
     log.Printf("control:done id=%s action=%s", containerID, req.Action)
 }
 

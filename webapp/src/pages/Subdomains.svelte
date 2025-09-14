@@ -1,61 +1,46 @@
-<script>
+<script lang="ts">
 	import Header from '../lib/Header.svelte'
 	import Modal from '../lib/Modal.svelte'
 	import ToastContainer from '../lib/ToastContainer.svelte'
 	
-	export let user
-	export let container = null
-	export let subdomains = []
+	type Container = { allocated_ports?: number[] }
+	type Subdomain = { id: number; subdomain: string; target_port: number; subdomain_type: 'project'|'username'; is_active?: boolean; created_at?: string }
+	export let user: { username: string }
+	export let container: Container | null = null
+	export let subdomains: Subdomain[] = []
 
 	let showSubdomainModal = false
-	let newSubdomain = { subdomain: '', target_port: '', subdomain_type: 'project' }
-	let toastContainer
+	let newSubdomain: { subdomain: string; target_port: string|number; subdomain_type: 'project'|'username' } = { subdomain: '', target_port: '', subdomain_type: 'project' }
+	let toastContainer: any
 
 	async function getNewPort() {
 		const res = await fetch('/user/container/ports/new', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
 		const data = await res.json()
-		if (data.error) {
-			toastContainer.addToast(data.error, 'danger')
-			return
-		}
+		if (data.error) { toastContainer.addToast(data.error, 'danger'); return }
 		toastContainer.addToast(`Allocated port: ${data.port}`, 'success')
 		setTimeout(() => location.reload(), 1000)
 	}
 
 	async function createSubdomain() {
-		if (newSubdomain.subdomain_type === 'username') {
-			newSubdomain.subdomain = user.username
-		}
-		const res = await fetch('/user/subdomains', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(newSubdomain)
-		})
+		if (newSubdomain.subdomain_type === 'username') { newSubdomain.subdomain = user.username }
+		const res = await fetch('/user/subdomains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSubdomain) })
 		const data = await res.json()
-		if (data.error) {
-			toastContainer.addToast(data.error, 'danger')
-			return
-		}
+		if (data.error) { toastContainer.addToast(data.error, 'danger'); return }
 		toastContainer.addToast('Subdomain created successfully!', 'success')
 		showSubdomainModal = false
 		newSubdomain = { subdomain: '', target_port: '', subdomain_type: 'project' }
 		setTimeout(() => location.reload(), 1000)
 	}
 
-	async function deleteSubdomain(id) {
+	async function deleteSubdomain(id: number) {
 		const res = await fetch(`/user/subdomains/${id}`, { method: 'DELETE' })
 		const data = await res.json()
-		if (data.error) {
-			toastContainer.addToast(data.error, 'danger')
-			return
-		}
+		if (data.error) { toastContainer.addToast(data.error, 'danger'); return }
 		toastContainer.addToast('Subdomain deleted', 'success')
 		setTimeout(() => location.reload(), 1000)
 	}
 
-	$: if (newSubdomain.subdomain_type === 'username') {
-		newSubdomain.subdomain = user?.username || ''
-	}
+	$: if (newSubdomain.subdomain_type === 'username') { newSubdomain.subdomain = user?.username || '' }
 </script>
 
 <Header {user} currentPage="subdomains" />
@@ -244,8 +229,8 @@
 >
 	<form on:submit|preventDefault={createSubdomain} class="space-y-4">
 		<div>
-			<label class="nb-label">subdomain type</label>
-			<div class="space-y-2">
+			<label class="nb-label" for="sub_type">subdomain type</label>
+			<div id="sub_type" class="space-y-2">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="username" class="w-4 h-4">
 					<span>username subdomain ({user.username}.hack.kim)</span>
@@ -259,21 +244,15 @@
 		
 		{#if newSubdomain.subdomain_type === 'username'}
 			<div>
-				<label class="nb-label">domain</label>
-				<div class="nb-input bg-transparent">
+				<label class="nb-label" for="dom_preview">domain</label>
+				<div id="dom_preview" class="nb-input bg-transparent">
 					your project will be on <span class="nb-mono font-bold">{user.username}.hack.kim</span>
 				</div>
 			</div>
 		{:else}
 			<div>
-				<label class="nb-label">subdomain name</label>
-				<input 
-					type="text" 
-					bind:value={newSubdomain.subdomain} 
-					required 
-					placeholder="myapp"
-					class="nb-input"
-				>
+				<label class="nb-label" for="sub_name">subdomain name</label>
+				<input id="sub_name" type="text" bind:value={newSubdomain.subdomain} required class="nb-input" placeholder="my-app">
 				<div class="text-xs nb-text-muted mt-1">
 					preview: {newSubdomain.subdomain || 'myapp'}.{user.username}.hack.kim
 				</div>
@@ -281,8 +260,8 @@
 		{/if}
 		
 		<div>
-			<label class="nb-label">target port</label>
-			<select bind:value={newSubdomain.target_port} required class="nb-input nb-select">
+			<label class="nb-label" for="sub_port">target port</label>
+			<select id="sub_port" bind:value={newSubdomain.target_port} required class="nb-input nb-select">
 				<option value="">select a port</option>
 				{#if container?.allocated_ports}
 					{#each container.allocated_ports as port}

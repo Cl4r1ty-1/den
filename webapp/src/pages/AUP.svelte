@@ -114,8 +114,8 @@
 				</details>
 				
 				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={acceptTOS} class="w-4 h-4">
-					<span class="text-sm font-medium">I have read and agree to the Acceptable Use Policy</span>
+					<input id="accept_tos" type="checkbox" bind:checked={acceptTOS} class="w-4 h-4">
+					<label for="accept_tos" class="text-sm font-medium">I have read and agree to the Acceptable Use Policy</label>
 				</label>
 			</div>
 			
@@ -164,10 +164,10 @@
 					</div>
 				</details>
 				
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={acceptPrivacy} class="w-4 h-4">
-					<span class="text-sm font-medium">I have read and agree to the Privacy Policy</span>
-				</label>
+				<div class="flex items-center gap-2">
+					<input id="accept_privacy" type="checkbox" bind:checked={acceptPrivacy} class="w-4 h-4">
+					<label for="accept_privacy" class="text-sm font-medium">I have read and agree to the Privacy Policy</label>
+				</div>
 			</div>
 		</div>
 
@@ -222,10 +222,11 @@
 	<form on:submit|preventDefault={submitQuiz} class="space-y-6">
 		{#each quiz_questions as question, index}
 			<div>
-				<label class="nb-label">
+				<label class="nb-label" for={`quiz_${question.id}`}>
 					{index + 1}. {question.prompt}
 				</label>
 				<input 
+					id={`quiz_${question.id}`}
 					type="text" 
 					bind:value={quizAnswers[question.id]}
 					placeholder="your answer"
