@@ -394,7 +394,13 @@ func (h *Handler) RequireNodeAuth() gin.HandlerFunc {
 	}
 }
 func (h *Handler) Home(c *gin.Context) {
-	h.inertia(c, "Home", gin.H{})
+	props := gin.H{}
+	if sessionID, err := c.Cookie("session"); err == nil {
+		if user, err := h.auth.GetUserBySession(sessionID); err == nil && user != nil {
+			props["user"] = user
+		}
+	}
+	h.inertia(c, "Home", props)
 }
 
 func (h *Handler) LoginPage(c *gin.Context) {
