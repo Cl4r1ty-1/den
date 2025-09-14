@@ -23,6 +23,9 @@
 	}
 
 	async function createSubdomain() {
+		if (newSubdomain.subdomain_type === 'username') {
+			newSubdomain.subdomain = user.username
+		}
 		const res = await fetch('/user/subdomains', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -48,6 +51,10 @@
 		}
 		toastContainer.addToast('Subdomain deleted', 'success')
 		setTimeout(() => location.reload(), 1000)
+	}
+
+	$: if (newSubdomain.subdomain_type === 'username') {
+		newSubdomain.subdomain = user?.username || ''
 	}
 </script>
 
@@ -250,19 +257,28 @@
 			</div>
 		</div>
 		
-		<div>
-			<label class="nb-label">subdomain name</label>
-			<input 
-				type="text" 
-				bind:value={newSubdomain.subdomain} 
-				required 
-				placeholder={newSubdomain.subdomain_type === 'username' ? user.username : 'myapp'}
-				class="nb-input"
-			>
-			<div class="text-xs nb-text-muted mt-1">
-				preview: {newSubdomain.subdomain || (newSubdomain.subdomain_type === 'username' ? user.username : 'myapp')}{newSubdomain.subdomain_type === 'username' ? '.hack.kim' : '.' + user.username + '.hack.kim'}
+		{#if newSubdomain.subdomain_type === 'username'}
+			<div>
+				<label class="nb-label">domain</label>
+				<div class="nb-input bg-transparent">
+					your project will be on <span class="nb-mono font-bold">{user.username}.hack.kim</span>
+				</div>
 			</div>
-		</div>
+		{:else}
+			<div>
+				<label class="nb-label">subdomain name</label>
+				<input 
+					type="text" 
+					bind:value={newSubdomain.subdomain} 
+					required 
+					placeholder="myapp"
+					class="nb-input"
+				>
+				<div class="text-xs nb-text-muted mt-1">
+					preview: {newSubdomain.subdomain || 'myapp'}.{user.username}.hack.kim
+				</div>
+			</div>
+		{/if}
 		
 		<div>
 			<label class="nb-label">target port</label>

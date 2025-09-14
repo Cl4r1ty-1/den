@@ -17,6 +17,10 @@
 	let stats = null
 	let statsTimer = null
 
+	$: if (newSubdomain.subdomain_type === 'username') {
+		newSubdomain.subdomain = user?.username || ''
+	}
+
 	async function createContainer() {
 		containerCreating = true
 		creationProgress = 0
@@ -26,17 +30,17 @@
 			toastContainer.addToast('Creating your environment...', 'info')
 			creationProgress = 20
 			
-			const res = await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+		const res = await fetch('/user/container/create', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
 			creationProgress = 40
 			
-			const data = await res.json()
+		const data = await res.json()
 			creationProgress = 60
 			
-			if (data.error) {
+		if (data.error) {
 				containerCreating = false
 				creationProgress = 0
 				toastContainer.addToast(data.error, 'danger')
-				return
+			return
 			}
 			
 			creationProgress = 80
@@ -232,9 +236,9 @@
 									>
 										<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-										</svg>
-										setup ssh
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+									</svg>
+									setup ssh
 									</a>
 								</div>
 								<div class="bg-background border-2 border-border p-4 font-mono text-sm">
@@ -262,7 +266,7 @@
 									<div class="flex flex-wrap gap-2">
 										{#each container.allocated_ports as port}
 											<div class="bg-background border-2 border-border px-2 py-1 text-sm font-mono">{port}</div>
-										{/each}
+					{/each}
 									</div>
 								{:else}
 									<p class="text-foreground/70 text-sm">No ports allocated yet</p>
@@ -294,7 +298,7 @@
 								{/if}
 							</div>
 						</div>
-					{:else}
+			{:else}
 						<div class="text-center py-12">
 							<div class="w-20 h-20 mx-auto mb-6 bg-foreground/10 border-2 border-border flex items-center justify-center">
 								<svg class="w-10 h-10 text-foreground/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -314,10 +318,10 @@
 								create environment
 							</button>
 						</div>
-					{/if}
-				</div>
-			</div>
+			{/if}
 		</div>
+	</div>
+</div>
 
 		<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
 			<div class="flex items-center justify-between mb-6">
@@ -344,8 +348,8 @@
 									<svg class="w-5 h-5 text-main-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
 									</svg>
-								</div>
-								<div>
+					</div>
+					<div>
 									<div class="font-mono font-bold">
 										{#if subdomain.subdomain_type === 'username'}
 											{subdomain.subdomain}.hack.kim
@@ -369,7 +373,7 @@
 								</a>
 								<button 
 									class="bg-chart-1 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
-									on:click={() => deleteSubdomain(subdomain.ID)}
+									on:click={() => deleteSubdomain(subdomain.id)}
 								>
 									<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
@@ -396,7 +400,7 @@
 			{/if}
 		</div>
 	</main>
-</div>
+				</div>
 
 <Modal show={showContainerModal} title="Create Environment" onClose={() => showContainerModal = false}>
 	<div class="space-y-4">
@@ -438,26 +442,38 @@
 			<div class="space-y-2">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="project" class="w-4 h-4">
-					<span>project subdomain ({newSubdomain.subdomain}.{user.username}.hack.kim)</span>
+					<span>project subdomain (myapp.{user.username}.hack.kim)</span>
 				</label>
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="radio" bind:group={newSubdomain.subdomain_type} value="username" class="w-4 h-4">
-					<span>username subdomain ({newSubdomain.subdomain}.hack.kim)</span>
+					<span>username subdomain ({user.username}.hack.kim)</span>
 				</label>
 			</div>
 		</div>
 		
-		<div>
-			<label class="block text-sm font-heading mb-2">subdomain name</label>
-			<input 
-				type="text" 
-				bind:value={newSubdomain.subdomain} 
-				required 
-				class="w-full bg-background border-2 border-border p-3 font-mono"
-				placeholder="my-app"
-			>
+		{#if newSubdomain.subdomain_type === 'username'}
+			<div>
+				<label class="block text-sm font-heading mb-2">domain</label>
+				<div class="w-full bg-background border-2 border-border p-3">
+					your project will be on <span class="font-mono font-bold">{user.username}.hack.kim</span>
+				</div>
+			</div>
+		{:else}
+			<div>
+				<label class="block text-sm font-heading mb-2">subdomain name</label>
+				<input 
+					type="text" 
+					bind:value={newSubdomain.subdomain} 
+					required={newSubdomain.subdomain_type !== 'username'} 
+					class="w-full bg-background border-2 border-border p-3 font-mono"
+					placeholder="myapp"
+				>
+				<div class="text-xs text-foreground/70 mt-1">
+					preview: {newSubdomain.subdomain || 'myapp'}.{user.username}.hack.kim
 		</div>
-		
+	</div>
+{/if}
+
 		<div>
 			<label class="block text-sm font-heading mb-2">target port</label>
 			<select bind:value={newSubdomain.target_port} required class="w-full bg-background border-2 border-border p-3">
@@ -480,7 +496,12 @@
 		</button>
 		<button 
 			class="bg-main text-main-foreground border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
-			on:click={createSubdomain}
+			on:click={async () => {
+				if (newSubdomain.subdomain_type === 'username') {
+					newSubdomain.subdomain = user.username
+				}
+				await createSubdomain()
+			}}
 		>
 			create subdomain
 		</button>
