@@ -2,6 +2,7 @@
 	import Header from '../lib/Header.svelte'
 	import Modal from '../lib/Modal.svelte'
 	import ToastContainer from '../lib/ToastContainer.svelte'
+	import { onMount } from 'svelte'
 	
 	type Container = { allocated_ports?: number[]; status?: string }
 	type Subdomain = { id: number; subdomain: string; target_port: number; subdomain_type: 'project'|'username' }
@@ -18,6 +19,7 @@
 	let creationProgress = 0
 	let stats: any = null
 	let statsTimer: any = null
+	let selectedShell: 'bash'|'zsh'|'fish' = 'bash'
 
 	$: if (newSubdomain.subdomain_type === 'username') {
 		newSubdomain.subdomain = user?.username || ''
@@ -145,6 +147,29 @@
 		// @ts-ignore
 		statsTimer = setInterval(pollStats, 5000)
 	}
+
+	onMount(async () => {
+		if (!container) return
+		try {
+			const res = await fetch(`/api/control/containers/${(container as any).id || ''}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get_shell', username: user.username }) })
+			if (res.ok) {
+				const data = await res.json()
+				const path = (data.shell || '').split('/').pop()
+				if (path === 'bash' || path === 'zsh' || path === 'fish') selectedShell = path
+			}
+		} catch {}
+	})
+
+	async function setShell() {
+		if (!container) return
+		try {
+			const res = await fetch(`/api/control/containers/${(container as any).id || ''}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_shell', shell: selectedShell, username: user.username }) })
+			if (!res.ok) { const t = await res.text(); toastContainer.addToast(`Failed to set shell: ${t}`, 'danger'); return }
+			toastContainer.addToast(`Default shell set to ${selectedShell}`, 'success')
+		} catch (e) {
+			toastContainer.addToast('Failed to set shell', 'danger')
+		}
+	}
 </script>
 
 <div class="min-h-screen bg-background text-foreground">
@@ -250,6 +275,19 @@
 								<p class="text-foreground/70 text-sm mt-2">
 									Use this command to connect to your environment. Set up SSH keys or password first.
 								</p>
+								<div class="mt-4">
+									<label class="block text-sm font-heading mb-2" for="shell_select">default shell</label>
+									<div class="flex items-center gap-2">
+										<select id="shell_select" class="bg-background border-2 border-border p-2" bind:value={selectedShell}>
+											<option value="bash">bash</option>
+											<option value="zsh">zsh</option>
+											<option value="fish">fish</option>
+										</select>
+										<button class="bg-main text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow" on:click={setShell}>
+											set
+										</button>
+									</div>
+								</div>
 							</div>
 							
 							<div>
@@ -467,9 +505,9 @@
 				<input id="sd_name" type="text" bind:value={newSubdomain.subdomain} required class="w-full bg-background border-2 border-border p-3 font-mono" placeholder="my-app">
 				<div class="text-xs text-foreground/70 mt-1">
 					preview: {newSubdomain.subdomain || 'myapp'}.{user.username}.hack.kim
-				</div>
-			</div>
-		{/if}
+		</div>
+	</div>
+{/if}
 
 		<div>
 			<label class="block text-sm font-heading mb-2" for="sd_port">target port</label>

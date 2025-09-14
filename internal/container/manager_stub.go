@@ -91,3 +91,11 @@ func (m *Manager) GetRandomPort() (int, error) {
 func (m *Manager) FindAvailablePort() (int, error) {
     return 0, fmt.Errorf("container operations not supported on master node")
 }
+
+func (m *Manager) SetDefaultShell(containerName, username, shell string) (string, error) {
+	return "", fmt.Errorf("container operations not supported on master node")
+}
+
+func (m *Manager) GetDefaultShell(containerName, username string) (string, error) {
+	return "", fmt.Errorf("container operations not supported on master node")
+}

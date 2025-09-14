@@ -472,7 +472,7 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         return
     }
-    var req struct { Action string `json:"action"` }
+    var req struct { Action string `json:"action"`; Shell string `json:"shell"`; Username string `json:"username"` }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         http.Error(w, "invalid request", http.StatusBadRequest)
         return
@@ -484,6 +484,22 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
         if err := s.manager.StopContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
     case "start", "resume":
         if err := s.manager.StartContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
+    case "set_shell":
+		if req.Shell == "" || (req.Shell != "bash" && req.Shell != "zsh" && req.Shell != "fish") { http.Error(w, "invalid shell", http.StatusBadRequest); return }
+		out, err := s.manager.SetDefaultShell(containerID, req.Username, req.Shell)
+		if err != nil { opControlTotal.WithLabelValues("set_shell", "fail").Inc(); log.Printf("control:fail id=%s action=set_shell error=%v out=%q", containerID, err, out); http.Error(w, err.Error()+": "+out, http.StatusInternalServerError); return }
+		opControlTotal.WithLabelValues("set_shell", "success").Inc()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"output": out})
+		return
+	case "get_shell":
+		if req.Username == "" { http.Error(w, "missing username", http.StatusBadRequest); return }
+		shell, err := s.manager.GetDefaultShell(containerID, req.Username)
+		if err != nil { opControlTotal.WithLabelValues("get_shell", "fail").Inc(); http.Error(w, err.Error(), http.StatusInternalServerError); return }
+		opControlTotal.WithLabelValues("get_shell", "success").Inc()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"shell": shell})
+		return
     default:
         http.Error(w, "unknown action", http.StatusBadRequest); return
     }

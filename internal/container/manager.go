@@ -163,7 +163,7 @@ func (m *Manager) setupUserInContainer(containerName, username string) error {
 		{"lxc", "exec", containerName, "--", "chown", fmt.Sprintf("%s:%s", username, username), fmt.Sprintf("/home/%s/.ssh", username)},
 		{"lxc", "exec", containerName, "--", "chmod", "700", fmt.Sprintf("/home/%s/.ssh", username)},
 		{"lxc", "exec", containerName, "--", "apt-get", "update"},
-		{"lxc", "exec", containerName, "--", "apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop", "nano"},
+		{"lxc", "exec", containerName, "--", "apt-get", "install", "-y", "openssh-server", "sudo", "curl", "git", "vim", "htop", "nano", "zsh", "fish"},
 		{"lxc", "exec", containerName, "--", "systemctl", "enable", "ssh"},
 		{"lxc", "exec", containerName, "--", "systemctl", "start", "ssh"},
 		{"lxc", "exec", containerName, "--", "bash", "-c", fmt.Sprintf("echo '%s ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/%s", username, username)},
@@ -382,6 +382,44 @@ func (m *Manager) SetupSSHPassword(containerName, username, password string) err
 	}
 
 	return nil
+}
+
+func (m *Manager) SetDefaultShell(containerName, username, shell string) (string, error) {
+	var shellPath string
+	switch shell {
+	case "bash":
+		shellPath = "/bin/bash"
+	case "zsh":
+		shellPath = "/usr/bin/zsh"
+	case "fish":
+		shellPath = "/usr/bin/fish"
+	default:
+		return "", fmt.Errorf("unsupported shell: %s", shell)
+	}
+	cmds := [][]string{
+		{"lxc", "exec", containerName, "--", "bash", "-lc", fmt.Sprintf("grep -qx '%s' /etc/shells || echo '%s' >> /etc/shells", shellPath, shellPath)},
+	}
+	for _, c := range cmds {
+		x := exec.Command(c[0], c[1:]...)
+		if out, err := x.CombinedOutput(); err != nil {
+			return string(out), fmt.Errorf("failed to set shell prereqs: %w", err)
+		}
+	}
+	x := exec.Command("lxc", "exec", containerName, "--", "chsh", "-s", shellPath, username)
+	out, err := x.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("failed to set shell: %w", err)
+	}
+	return string(out), nil
+}
+
+func (m *Manager) GetDefaultShell(containerName, username string) (string, error) {
+	cmd := exec.Command("lxc", "exec", containerName, "--", "bash", "-lc", fmt.Sprintf("getent passwd %s | cut -d: -f7", username))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to get shell: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (m *Manager) setupPortForwarding(containerName string, allocatedPorts []int) error {
