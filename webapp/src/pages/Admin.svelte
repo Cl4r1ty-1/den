@@ -15,6 +15,8 @@
 	let newNode = { name: '', hostname: '', public_hostname: '', max_memory_mb: 4096, max_cpu_cores: 4, max_storage_gb: 15 }
 	let toastContainer
 	let activeTab = 'nodes'
+	let jobs = []
+	let jobsTimer = null
 
 	async function loadNodes() {
 		const res = await fetch('/admin/nodes')
@@ -26,6 +28,14 @@
 		const res = await fetch('/admin/users')
 		const data = await res.json()
 		users = data.users || []
+	}
+
+	async function loadJobs() {
+		try {
+			const res = await fetch('/admin/jobs?limit=50')
+			const data = await res.json()
+			jobs = data.jobs || []
+		} catch (_) {}
 	}
 
 	async function createNode() {
@@ -124,6 +134,10 @@
 			loadNodes()
 		} else if (tab === 'users') {
 			loadUsers()
+		} else if (tab === 'jobs') {
+			loadJobs()
+			clearInterval(jobsTimer)
+			jobsTimer = setInterval(loadJobs, 5000)
 		}
 	}
 
@@ -182,6 +196,12 @@
 				on:click={() => switchTab('users')}
 			>
 				users
+			</button>
+			<button 
+				class="px-4 py-2 border-2 border-border font-heading hover:translate-x-1 hover:translate-y-1 transition-transform {activeTab === 'jobs' ? 'bg-main text-main-foreground shadow-shadow' : 'bg-background text-foreground'}"
+				on:click={() => switchTab('jobs')}
+			>
+				jobs
 			</button>
 		</div>
 		{#if activeTab === 'nodes'}
@@ -342,6 +362,52 @@
 						<h3 class="text-xl font-heading mb-2">no users yet</h3>
 						<p class="text-foreground/70 mb-6">users will appear here once they sign up</p>
 					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if activeTab === 'jobs'}
+			<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
+				<div class="flex items-center justify-between mb-6">
+					<h2 class="text-2xl font-heading">recent jobs</h2>
+					<button 
+						class="bg-main text-main-foreground border-2 border-border px-3 py-1 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+						on:click={loadJobs}
+					>
+						refresh
+					</button>
+				</div>
+				{#if jobs.length}
+					<div class="overflow-x-auto">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="text-left">
+									<th class="border-2 border-border bg-background p-2 font-heading">id</th>
+									<th class="border-2 border-border bg-background p-2 font-heading">type</th>
+									<th class="border-2 border-border bg-background p-2 font-heading">status</th>
+									<th class="border-2 border-border bg-background p-2 font-heading">error</th>
+									<th class="border-2 border-border bg-background p-2 font-heading">updated</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each jobs as j}
+									<tr>
+										<td class="border-2 border-border p-2 font-mono">{j.id}</td>
+										<td class="border-2 border-border p-2">{j.type}</td>
+										<td class="border-2 border-border p-2">
+											<span class="px-2 py-1 border-2 border-border text-xs font-heading {j.status === 'success' ? 'bg-chart-4 text-main-foreground' : j.status === 'failed' ? 'bg-chart-1 text-main-foreground' : 'bg-background'}">
+												{j.status}
+											</span>
+										</td>
+										<td class="border-2 border-border p-2 text-foreground/70">{j.error || ''}</td>
+										<td class="border-2 border-border p-2">{new Date(j.updated_at).toLocaleString()}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else}
+					<p class="text-foreground/70">no jobs yet</p>
 				{/if}
 			</div>
 		{/if}

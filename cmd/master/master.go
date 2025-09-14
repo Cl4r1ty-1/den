@@ -263,13 +263,13 @@ func handleDeleteContainerJob(db *database.DB, jobID int, payload []byte) error 
 
     slaveURL := fmt.Sprintf("http://%s:8081/api/containers/%s", p.NodeHostname, p.ContainerID)
     req, _ := http.NewRequest(http.MethodDelete, slaveURL, nil)
-    client := &http.Client{Timeout: 30 * time.Second}
+    client := &http.Client{Timeout: 2 * time.Minute}
     resp, err := client.Do(req)
     if err != nil {
         return finalizeJob(db, jobID, false, err.Error(), nil)
     }
     defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
         b, _ := io.ReadAll(resp.Body)
         return finalizeJob(db, jobID, false, string(b), nil)
     }

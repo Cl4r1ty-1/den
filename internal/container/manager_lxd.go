@@ -4,6 +4,7 @@
 package container
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -205,9 +206,13 @@ func (m *ManagerLXD) GetContainerStatus(containerID string) (string, error) {
 }
 
 func (m *ManagerLXD) DeleteContainer(containerID string) error {
-	stopCmd := exec.Command("lxc", "stop", containerID)
-	stopCmd.Run()
-	deleteCmd := exec.Command("lxc", "delete", containerID)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	stopCmd := exec.CommandContext(ctx, "lxc", "stop", containerID, "--timeout", "20")
+	_ = stopCmd.Run()
+
+	deleteCmd := exec.CommandContext(ctx, "lxc", "delete", containerID, "--force")
 	if err := deleteCmd.Run(); err != nil {
 		return fmt.Errorf("failed to delete container: %w", err)
 	}

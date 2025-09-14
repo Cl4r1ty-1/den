@@ -18,6 +18,7 @@ import (
 	"github.com/joho/godotenv"
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
+    "runtime"
 )
 
 type Config struct {
@@ -36,6 +37,7 @@ type Slave struct {
 	client    *http.Client
 	ctx       context.Context
 	cancel    context.CancelFunc
+    startTime time.Time
 }
 
 func Run() error {
@@ -57,6 +59,7 @@ func Run() error {
 		client:  &http.Client{Timeout: 30 * time.Second},
 		ctx:     ctx,
 		cancel:  cancel,
+        startTime: time.Now(),
 	}
 
 	if err := slave.registerWithMaster(); err != nil {
@@ -243,6 +246,7 @@ func (s *Slave) startAPIServer() {
 	mux := http.NewServeMux()
     mux.Handle("/metrics", promhttp.Handler())
     mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){ w.WriteHeader(http.StatusOK); w.Write([]byte("ok")) })
+    mux.HandleFunc("/api/node/status", s.handleNodeStatus)
 	
 	// fuck this shit i'm out
 	mux.HandleFunc("/api/containers", s.handleCreateContainer)
@@ -264,6 +268,34 @@ func (s *Slave) startAPIServer() {
 		log.Printf("slave api server failed: %v", err)
 	}
 }
+
+func (s *Slave) handleNodeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+	type status struct {
+		Online bool   `json:"online"`
+		Hostname string `json:"hostname"`
+		UptimeSeconds int64 `json:"uptime_seconds"`
+		GoVersion string `json:"go_version"`
+		NumGoroutine int `json:"num_goroutine"`
+		Containers int `json:"containers"`
+	}
+	containers := 0
+	if list, err := s.manager.ListContainers(); err == nil {
+		containers = len(list)
+	}
+	host, _ := os.Hostname()
+	out := status{
+		Online: true,
+		Hostname: host,
+		UptimeSeconds: int64(time.Since(s.startTime).Seconds()),
+		GoVersion: runtime.Version(),
+		NumGoroutine: runtime.NumGoroutine(),
+		Containers: containers,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
 func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
     var req struct {
@@ -273,6 +305,8 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
     if req.ContainerID == "" || req.PutURL == "" { http.Error(w, "missing fields", http.StatusBadRequest); return }
 
+    log.Printf("export:start container=%s", req.ContainerID)
+
     sanitized := strings.ReplaceAll(req.ContainerID, "/", "-")
     ts := time.Now().Unix()
     tmpPath := fmt.Sprintf("/tmp/%s-%d.tar.gz", sanitized, ts)
@@ -281,6 +315,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     exportCmd.Stdout = &exportOut
     exportCmd.Stderr = &exportOut
     if err := exportCmd.Run(); err != nil {
+        log.Printf("export:fail container=%s error=%v out=%q", req.ContainerID, err, exportOut.String())
         http.Error(w, "export failed: "+exportOut.String(), http.StatusInternalServerError); return
     }
     workDir := fmt.Sprintf("/tmp/export-%s-%d", sanitized, ts)
@@ -294,6 +329,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     untar.Stderr = &untarOut
     if err := untar.Run(); err != nil {
         os.RemoveAll(workDir); os.Remove(tmpPath)
+        log.Printf("export:unpack_fail container=%s error=%v out=%q", req.ContainerID, err, untarOut.String())
         http.Error(w, "unpack failed: "+untarOut.String(), http.StatusInternalServerError); return
     }
     _ = exec.Command("chmod", "-R", "a+rX", workDir).Run()
@@ -304,6 +340,7 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     retar.Stderr = &retarOut
     if err := retar.Run(); err != nil {
         os.RemoveAll(workDir); os.Remove(tmpPath)
+        log.Printf("export:repack_fail container=%s error=%v out=%q", req.ContainerID, err, retarOut.String())
         http.Error(w, "repack failed: "+retarOut.String(), http.StatusInternalServerError); return
     }
     defer os.Remove(tmpPath)
@@ -317,10 +354,12 @@ func (s *Slave) handleExportContainer(w http.ResponseWriter, r *http.Request) {
     curl.Stdout = &curlOut
     curl.Stderr = &curlOut
     if err := curl.Run(); err != nil {
+        log.Printf("export:upload_fail container=%s error=%v out=%q", req.ContainerID, err, curlOut.String())
         http.Error(w, "upload failed: "+curlOut.String(), http.StatusBadGateway); return
     }
     fi, _ := os.Stat(uploadPath)
     _ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "size": func() int64 { if fi!=nil { return fi.Size() } ; return 0 }()})
+    log.Printf("export:done container=%s size=%d", req.ContainerID, func() int64 { if fi!=nil { return fi.Size() } ; return 0 }())
 }
 
 func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
@@ -339,14 +378,14 @@ func (s *Slave) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	log.Printf("creating container for user %d (%s)", req.UserID, req.Username)
+	log.Printf("create:start user=%d username=%s", req.UserID, req.Username)
 	container, err := s.manager.CreateContainer(req.UserID, req.Username)
 	if err != nil {
-		log.Printf("container creation failed: %v", err)
+		log.Printf("create:fail user=%d username=%s error=%v", req.UserID, req.Username, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("container created successfully: %+v", container)
+	log.Printf("create:done user=%d username=%s id=%s ip=%s", req.UserID, req.Username, container.ID, container.IP)
 	
 	json.NewEncoder(w).Encode(container)
 }
@@ -370,11 +409,15 @@ func (s *Slave) handleContainerOperations(w http.ResponseWriter, r *http.Request
 		json.NewEncoder(w).Encode(map[string]string{"status": status})
 		
 	case http.MethodDelete:
-		if err := s.manager.DeleteContainer(containerID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
+		log.Printf("delete:start id=%s", containerID)
+		go func(id string) {
+			if err := s.manager.DeleteContainer(id); err != nil {
+				log.Printf("delete:fail id=%s error=%v", id, err)
+				return
+			}
+			log.Printf("delete:done id=%s", id)
+		}(containerID)
+		w.WriteHeader(http.StatusAccepted)
 	}
 }
 
@@ -389,6 +432,7 @@ func (s *Slave) handleContainerStats(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         return
     }
+    log.Printf("stats:get id=%s", containerID)
     stats, err := s.manager.GetContainerStats(containerID)
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -413,14 +457,17 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "invalid request", http.StatusBadRequest)
         return
     }
+    log.Printf("control:start id=%s action=%s", containerID, req.Action)
     switch strings.ToLower(req.Action) {
     case "stop", "pause":
         if err := s.manager.StopContainer(containerID); err != nil {
+            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
         }
     case "start", "resume":
         if err := s.manager.StartContainer(containerID); err != nil {
+            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
         }
@@ -429,6 +476,7 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
         return
     }
     w.WriteHeader(http.StatusOK)
+    log.Printf("control:done id=%s action=%s", containerID, req.Action)
 }
 
 func (s *Slave) handlePortMapping(w http.ResponseWriter, r *http.Request) {
