@@ -368,6 +368,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 
 	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
+	r.GET("/legal", h.LegalPage)
 	r.GET("/logout", h.Logout)
 	r.GET("/auth/github", h.GitHubAuth)
 	r.GET("/auth/callback", h.GitHubCallback)

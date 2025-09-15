@@ -409,6 +409,10 @@ func (h *Handler) LoginPage(c *gin.Context) {
 	h.inertia(c, "Login", gin.H{})
 }
 
+func (h *Handler) LegalPage(c *gin.Context) {
+	h.inertia(c, "Legal", gin.H{})
+}
+
 func (h *Handler) Logout(c *gin.Context) {
 	if sessionID, err := c.Cookie("session"); err == nil && sessionID != "" {
 		_ = h.auth.DeleteSession(sessionID)
