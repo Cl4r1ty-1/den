@@ -5,20 +5,24 @@ import (
 )
 
 type User struct {
-	ID           int       `json:"id" db:"id"`
-	GitHubID     string    `json:"github_id" db:"github_id"`
-	Username     string    `json:"username" db:"username"`
-	Email        string    `json:"email" db:"email"`
-	DisplayName  string    `json:"display_name" db:"display_name"`
-	IsAdmin      bool      `json:"is_admin" db:"is_admin"`
-	ContainerID  *string   `json:"container_id" db:"container_id"`
-	SSHPassword  *string   `json:"-" db:"ssh_password"`
-	SSHPublicKey *string   `json:"ssh_public_key" db:"ssh_public_key"`
-    AgreedToTOS     bool      `json:"agreed_to_tos" db:"agreed_to_tos"`
-    AgreedToPrivacy bool      `json:"agreed_to_privacy" db:"agreed_to_privacy"`
-    TOSQuestions    []int     `json:"tos_questions" db:"tos_questions"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID              int        `json:"id" db:"id"`
+	GitHubID        string     `json:"github_id" db:"github_id"`
+	Username        string     `json:"username" db:"username"`
+	Email           string     `json:"email" db:"email"`
+	DisplayName     string     `json:"display_name" db:"display_name"`
+	IsAdmin         bool       `json:"is_admin" db:"is_admin"`
+	ContainerID     *string    `json:"container_id" db:"container_id"`
+	SSHPassword     *string    `json:"-" db:"ssh_password"`
+	SSHPublicKey    *string    `json:"ssh_public_key" db:"ssh_public_key"`
+	AgreedToTOS     bool       `json:"agreed_to_tos" db:"agreed_to_tos"`
+	AgreedToPrivacy bool       `json:"agreed_to_privacy" db:"agreed_to_privacy"`
+	TOSQuestions    []int      `json:"tos_questions" db:"tos_questions"`
+	ApprovalStatus  string     `json:"approval_status" db:"approval_status"`
+	ApprovedBy      *int       `json:"approved_by" db:"approved_by"`
+	ApprovedAt      *time.Time `json:"approved_at" db:"approved_at"`
+	RejectionReason *string    `json:"rejection_reason" db:"rejection_reason"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 type Question struct {

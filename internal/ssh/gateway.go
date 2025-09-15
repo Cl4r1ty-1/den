@@ -99,17 +99,33 @@ func (g *Gateway) authenticateUser(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	var storedKey sql.NullString
 	var containerStatus sql.NullString
 
+	var hasPassword sql.NullString
 	err := g.db.QueryRow(`
-		SELECT u.id, u.container_id, u.ssh_public_key, n.hostname, c.status
+		SELECT u.id, u.container_id, u.ssh_public_key, u.ssh_password, n.hostname, c.status
 		FROM users u
 		LEFT JOIN containers c ON u.container_id = c.id
 		LEFT JOIN nodes n ON c.node_id = n.id
 		WHERE u.username = $1
-	`, username).Scan(&userID, &containerID, &storedKey, &nodeHostname, &containerStatus)
+	`, username).Scan(&userID, &containerID, &storedKey, &hasPassword, &nodeHostname, &containerStatus)
 
 	if err != nil {
 		log.Printf("User %s not found: %v", username, err)
 		return nil, fmt.Errorf("user not found")
+	}
+
+	if (!storedKey.Valid || storedKey.String == "") && (!hasPassword.Valid || hasPassword.String == "") {
+		log.Printf("no SSH setup for user %s", username)
+		permissions := &ssh.Permissions{
+			Extensions: map[string]string{
+				"user_id":          fmt.Sprintf("%d", userID),
+				"username":         username,
+				"container_id":     containerID.String,
+				"node_hostname":    nodeHostname.String,
+				"container_status": containerStatus.String,
+				"no_ssh_setup":     "true",
+			},
+		}
+		return permissions, nil
 	}
 
 	if !storedKey.Valid {
@@ -206,14 +222,19 @@ func (g *Gateway) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 	nodeHostname := permissions.Extensions["node_hostname"]
 	username := permissions.Extensions["username"]
 	containerStatus := permissions.Extensions["container_status"]
+	noSSHSetup := permissions.Extensions["no_ssh_setup"]
+
+	if noSSHSetup == "true" {
+		g.handleNoSSHSetup(sshConn, chans, reqs, username)
+		return
+	}
 
 	if containerID == "" {
 		g.handleNoContainer(sshConn, chans, reqs, username)
 		return
 	}
 
-	// Check if container is offline/stopped
-	if containerStatus != "running" {
+	if containerStatus != "RUNNING" {
 		g.handleOfflineContainer(sshConn, chans, reqs, username, containerStatus)
 		return
 	}
@@ -263,6 +284,29 @@ func (g *Gateway) handleOfflineContainer(sshConn *ssh.ServerConn, chans <-chan s
 		_, err = channel.Write([]byte(message))
 		if err != nil {
 			log.Printf("failed to write offline message: %v", err)
+		}
+		channel.Close()
+	}
+}
+
+func (g *Gateway) handleNoSSHSetup(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, username string) {
+	go ssh.DiscardRequests(reqs)
+
+	for newChannel := range chans {
+		if newChannel.ChannelType() != "session" {
+			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			continue
+		}
+
+		channel, _, err := newChannel.Accept()
+		if err != nil {
+			log.Printf("could not accept channel: %v", err)
+			continue
+		}
+		message := fmt.Sprintf("\r\noops! looks like you have no way of getting into this environment yet...\r\n\r\nnot to worry! you can easily fix this by going to https://hack.kim/user/ssh-setup\r\n\r\nhope that helps!\r\n\r\n")
+		_, err = channel.Write([]byte(message))
+		if err != nil {
+			log.Printf("failed to write no SSH setup message: %v", err)
 		}
 		channel.Close()
 	}

@@ -203,7 +203,7 @@ func (m *Manager) getContainerInfo(name string) (*ContainerInfo, error) {
 	return &ContainerInfo{
 		ID:      name,
 		Name:    name,
-		Status:  "running",
+		Status:  "RUNNING",
 		IP:      ip,
 		SSHPort: 22,
 	}, nil

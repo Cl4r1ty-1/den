@@ -1190,7 +1190,7 @@ func (h *Handler) APICreateContainer(c *gin.Context) {
 	_, err = h.db.Exec(`
 		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, containerID, req.UserID, req.NodeID, containerInfo["Name"], "running", 
+	`, containerID, req.UserID, req.NodeID, containerInfo["Name"], "RUNNING", 
 		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})

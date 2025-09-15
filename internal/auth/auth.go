@@ -136,11 +136,13 @@ func (s *Service) createOrUpdateUser(ghUser *GitHubUser) (*models.User, error) {
 	var tosQuestions pq.Int64Array
 	err := s.db.QueryRow(`
 		SELECT id, github_id, username, email, display_name, is_admin, container_id,
-		       ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
+		       ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, 
+		       approval_status, approved_by, approved_at, rejection_reason, created_at, updated_at
 		FROM users WHERE github_id = $1
 	`, fmt.Sprintf("%d", ghUser.ID)).Scan(
 		&user.ID, &user.GitHubID, &user.Username, &user.Email, &user.DisplayName,
-		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQuestions, &user.CreatedAt, &user.UpdatedAt,
+		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQuestions,
+		&user.ApprovalStatus, &user.ApprovedBy, &user.ApprovedAt, &user.RejectionReason, &user.CreatedAt, &user.UpdatedAt,
 	)
 	user.TOSQuestions = make([]int, len(tosQuestions))
 	for i, v := range tosQuestions { user.TOSQuestions[i] = int(v) }
@@ -156,13 +158,15 @@ func (s *Service) createOrUpdateUser(ghUser *GitHubUser) (*models.User, error) {
 		if ghUser.Email != nil { email = *ghUser.Email }
 		var tos pq.Int64Array
 		err = s.db.QueryRow(`
-			INSERT INTO users (github_id, username, email, display_name)
-			VALUES ($1, $2, $3, $4)
+			INSERT INTO users (github_id, username, email, display_name, approval_status)
+			VALUES ($1, $2, $3, $4, 'pending')
 			RETURNING id, github_id, username, email, display_name, is_admin, container_id,
-			          ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions, created_at, updated_at
+			          ssh_public_key, agreed_to_tos, agreed_to_privacy, tos_questions,
+			          approval_status, approved_by, approved_at, rejection_reason, created_at, updated_at
 		`, fmt.Sprintf("%d", ghUser.ID), username, email, displayName).Scan(
 			&user.ID, &user.GitHubID, &user.Username, &user.Email, &user.DisplayName,
-			&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tos, &user.CreatedAt, &user.UpdatedAt,
+			&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tos,
+			&user.ApprovalStatus, &user.ApprovedBy, &user.ApprovedAt, &user.RejectionReason, &user.CreatedAt, &user.UpdatedAt,
 		)
 		user.TOSQuestions = make([]int, len(tos))
 		for i, v := range tos { user.TOSQuestions[i] = int(v) }

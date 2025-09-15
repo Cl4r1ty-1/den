@@ -251,7 +251,7 @@ func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error 
         sshPort = v
     }
 
-    if _, err := db.Exec(`INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports) VALUES ($1,$2,$3,$4,'running',$5,$6,4096,4,15,$7)`,
+    if _, err := db.Exec(`INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports) VALUES ($1,$2,$3,$4,'RUNNING',$5,$6,4096,4,15,$7)`,
         containerID, p.UserID, nodeID, name, ip, sshPort, pq.Array([]int{})); err != nil {
         return finalizeJob(db, jobID, false, "db insert failed", nil)
     }
