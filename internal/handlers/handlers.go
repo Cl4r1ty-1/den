@@ -1320,7 +1320,10 @@ func (h *Handler) APIUpdateContainerStatus(c *gin.Context) {
 	containerID := c.Param("id")
 	
 	var req struct {
-		Status string `json:"status" binding:"required"`
+		NodeToken   string `json:"node_token" binding:"required"`
+		ContainerID string `json:"container_id" binding:"required"`
+		Status      string `json:"status" binding:"required"`
+		Timestamp   int64  `json:"timestamp"`
 	}
 	
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1328,12 +1331,20 @@ func (h *Handler) APIUpdateContainerStatus(c *gin.Context) {
 		return
 	}
 	
-	_, err := h.db.Exec("UPDATE containers SET status = $1, updated_at = NOW() WHERE id = $2", req.Status, containerID)
+	var nodeID int
+	err := h.db.QueryRow("SELECT id FROM nodes WHERE token = $1", req.NodeToken).Scan(&nodeID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid node token"})
+		return
+	}
+	
+	_, err = h.db.Exec("UPDATE containers SET status = $1, updated_at = NOW() WHERE id = $2", req.Status, containerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update container status"})
 		return
 	}
 	
+	log.Printf("Updated container %s status to %s", containerID, req.Status)
 	c.JSON(http.StatusOK, gin.H{"message": "status updated successfully"})
 }
 func generateState() string {

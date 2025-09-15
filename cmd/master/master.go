@@ -417,6 +417,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	{
 		apiGroup.POST("/nodes/register", h.APIRegisterNode)
 		apiGroup.POST("/nodes/heartbeat", h.APINodeHeartbeat)
+		apiGroup.POST("/containers/:id/status", h.APIUpdateContainerStatus)
 	}
 	
 	apiProtected := r.Group("/api")
@@ -425,7 +426,6 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		apiProtected.POST("/containers", h.APICreateContainer)
 		apiProtected.GET("/containers/:id", h.APIGetContainer)
 		apiProtected.DELETE("/containers/:id", h.APIDeleteContainer)
-		apiProtected.POST("/containers/:id/status", h.APIUpdateContainerStatus)
 	}
 
 	r.NoRoute(h.NotFound)
