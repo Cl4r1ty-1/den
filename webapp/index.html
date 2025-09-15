@@ -14,7 +14,7 @@
       <div
         class="max-w-6xl mx-auto px-6 py-4 text-sm flex flex-col md:flex-row items-center justify-between gap-2"
       >
-        <div class="opacity-80">Copyright {new Date().getFullYear?.() || ''} den</div>
+        <div class="opacity-80">Copyright <span id="year"></span> den</div>
         <nav class="flex items-center gap-4">
           <a href="/legal" class="hover:underline">legal</a>
           <a href="/login" class="hover:underline">login</a>
@@ -24,6 +24,14 @@
         </nav>
       </div>
     </footer>
+    <script>
+      (function () {
+        try {
+          document.getElementById("year").textContent =
+            new Date().getFullYear();
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
