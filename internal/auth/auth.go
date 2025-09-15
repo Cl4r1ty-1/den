@@ -220,6 +220,11 @@ func (s *Service) GetUserBySession(sessionID string) (*models.User, error) {
 	return &user, nil
 }
 
+func (s *Service) DeleteSession(sessionID string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE id = $1`, sessionID)
+	return err
+}
+
 func (s *Service) SetSSHPassword(userID int, password string) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

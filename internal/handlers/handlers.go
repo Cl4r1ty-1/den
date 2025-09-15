@@ -407,6 +407,15 @@ func (h *Handler) LoginPage(c *gin.Context) {
 	h.inertia(c, "Login", gin.H{})
 }
 
+func (h *Handler) Logout(c *gin.Context) {
+	if sessionID, err := c.Cookie("session"); err == nil && sessionID != "" {
+		_ = h.auth.DeleteSession(sessionID)
+	}
+	c.SetCookie("session", "", -1, "/", "", false, true)
+	c.SetCookie("oauth_state", "", -1, "/", "", false, true)
+	h.inertia(c, "Logout", gin.H{"message": "you've been successfully logged out"})
+}
+
 func (h *Handler) GitHubAuth(c *gin.Context) {
 	state := generateState()
 	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
