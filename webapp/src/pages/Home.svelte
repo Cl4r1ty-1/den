@@ -40,7 +40,7 @@
         {#if user}
           <a
             href="/user/dashboard"
-            class="inline-block bg-main text-main-foreground dark:text-white border-2 border-border px-8 py-4 text-xl font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+            class="inline-block bg-main text-main-foreground border-2 border-border px-8 py-4 text-xl font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
           >
             go to dashboard
           </a>
