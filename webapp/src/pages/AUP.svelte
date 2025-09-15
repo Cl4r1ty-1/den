@@ -63,26 +63,26 @@
 	}
 </script>
 
-<div class="min-h-screen bg-[var(--nb-bg)] py-8">
-	<div class="nb-container max-w-4xl">
+<div class="min-h-screen bg-background text-foreground py-8">
+	<div class="max-w-4xl mx-auto px-6">
 		<div class="text-center mb-8">
-			<h1 class="nb-title text-4xl mb-3">
-				welcome, <span class="text-[var(--nb-primary)]">{user.display_name}</span>!
+			<h1 class="text-4xl font-heading mb-3">
+				welcome, <span class="text-main">{user.display_name}</span>!
 			</h1>
-			<p class="nb-subtitle text-xl">please review and accept our policies to continue</p>
+			<p class="text-xl text-foreground/70">please review and accept our policies to continue</p>
 		</div>
 		<div class="grid md:grid-cols-2 gap-6 mb-8">
-			<div class="nb-card-lg">
+			<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
 				<div class="flex items-center gap-3 mb-4">
-					<div class="w-12 h-12 bg-[var(--nb-primary)] rounded-lg flex items-center justify-center">
-						<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<div class="w-12 h-12 bg-chart-1 border-2 border-border flex items-center justify-center">
+						<svg class="w-6 h-6 text-main-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
 						</svg>
 					</div>
-					<h2 class="nb-title text-xl">acceptable use policy</h2>
+					<h2 class="text-xl font-heading">acceptable use policy</h2>
 				</div>
 				
-				<div class="nb-card bg-[var(--nb-surface-alt)] mb-4 text-sm nb-text-muted">
+				<div class="bg-background border-2 border-border p-4 mb-4 text-sm text-foreground/70">
 					<p class="mb-3">our AUP ensures a safe and fair environment for everyone. key points:</p>
 					<ul class="space-y-1">
 						<li>• no cryptocurrency mining</li>
@@ -94,8 +94,8 @@
 				</div>
 				
 				<details class="mb-4">
-					<summary class="cursor-pointer font-bold mb-2">read full policy</summary>
-					<div class="nb-card bg-[var(--nb-surface-alt)] text-xs nb-text-muted max-h-60 overflow-y-auto">
+					<summary class="cursor-pointer font-heading mb-2">read full policy</summary>
+					<div class="bg-background border-2 border-border p-4 text-xs text-foreground/70 max-h-60 overflow-y-auto">
 						<h3 class="font-bold mb-2">Acceptable Use Policy (AUP)</h3>
 						<p class="mb-2"><strong>Effective Date:</strong> 2025-08-10</p>
 						
@@ -115,21 +115,21 @@
 				
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input id="accept_tos" type="checkbox" bind:checked={acceptTOS} class="w-4 h-4">
-					<label for="accept_tos" class="text-sm font-medium">I have read and agree to the Acceptable Use Policy</label>
+					<label for="accept_tos" class="text-sm">I have read and agree to the Acceptable Use Policy</label>
 				</label>
 			</div>
 			
-			<div class="nb-card-lg">
+			<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
 				<div class="flex items-center gap-3 mb-4">
-					<div class="w-12 h-12 bg-[var(--nb-secondary)] rounded-lg flex items-center justify-center">
-						<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<div class="w-12 h-12 bg-chart-2 border-2 border-border flex items-center justify-center">
+						<svg class="w-6 h-6 text-main-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
 						</svg>
 					</div>
-					<h2 class="nb-title text-xl">privacy policy</h2>
+					<h2 class="text-xl font-heading">privacy policy</h2>
 				</div>
 				
-				<div class="nb-card bg-[var(--nb-surface-alt)] mb-4 text-sm nb-text-muted">
+				<div class="bg-background border-2 border-border p-4 mb-4 text-sm text-foreground/70">
 					<p class="mb-3">we respect your privacy and protect your data. what we collect:</p>
 					<ul class="space-y-1">
 						<li>• account information (GitHub profile)</li>
@@ -141,8 +141,8 @@
 				</div>
 				
 				<details class="mb-4">
-					<summary class="cursor-pointer font-bold mb-2">read full policy</summary>
-					<div class="nb-card bg-[var(--nb-surface-alt)] text-xs nb-text-muted max-h-60 overflow-y-auto">
+					<summary class="cursor-pointer font-heading mb-2">read full policy</summary>
+					<div class="bg-background border-2 border-border p-4 text-xs text-foreground/70 max-h-60 overflow-y-auto">
 						<h3 class="font-bold mb-2">Privacy Policy</h3>
 						<p class="mb-2"><strong>Effective Date:</strong> 2025-08-10</p>
 						
@@ -166,32 +166,34 @@
 				
 				<div class="flex items-center gap-2">
 					<input id="accept_privacy" type="checkbox" bind:checked={acceptPrivacy} class="w-4 h-4">
-					<label for="accept_privacy" class="text-sm font-medium">I have read and agree to the Privacy Policy</label>
+					<label for="accept_privacy" class="text-sm">I have read and agree to the Privacy Policy</label>
 				</div>
 			</div>
 		</div>
 
 		<div class="text-center">
 			<button 
-				class="nb-button nb-button-xl nb-button-primary"
+				class="bg-main text-main-foreground border-2 border-border px-8 py-3 text-lg font-heading shadow-shadow hover:translate-x-1 hover:translate-y-1 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
 				on:click={startQuiz}
 				disabled={!acceptTOS || !acceptPrivacy}
 			>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 				</svg>
 				continue to verification quiz
 			</button>
 		</div>
 
-		<div class="nb-card bg-[var(--nb-info)] text-white mt-8">
+		<div class="bg-secondary-background border-2 border-border p-6 shadow-shadow mt-8">
 			<div class="flex items-start gap-3">
-				<svg class="w-5 h-5 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-				</svg>
+				<div class="w-12 h-12 bg-chart-3 border-2 border-border flex items-center justify-center">
+					<svg class="w-6 h-6 text-main-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+				</div>
 				<div>
-					<h4 class="font-bold mb-2">why do we need this?</h4>
-					<p class="text-sm opacity-90">
+					<h4 class="text-xl font-heading mb-2">why do we need this?</h4>
+					<p class="text-foreground/70">
 						by accepting these policies, you help us maintain a safe, secure, and fair environment for all users. 
 						the verification quiz ensures you've read and understood our guidelines.
 					</p>
@@ -208,12 +210,12 @@
 	onClose={() => showQuizModal = false}
 >
 	<div class="mb-4">
-		<div class="nb-card bg-[var(--nb-warning)] text-[var(--nb-accent)]">
+		<div class="bg-chart-3 text-main-foreground border-2 border-border p-4 shadow-shadow">
 			<div class="flex items-center gap-2">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
 				</svg>
-				<span class="font-bold">prove you read the policies!</span>
+				<span class="font-heading">prove you read the policies!</span>
 			</div>
 			<p class="text-sm mt-1">answer these questions to show you understand our guidelines</p>
 		</div>
@@ -222,7 +224,7 @@
 	<form on:submit|preventDefault={submitQuiz} class="space-y-6">
 		{#each quiz_questions as question, index}
 			<div>
-				<label class="nb-label" for={`quiz_${question.id}`}>
+				<label class="block text-sm font-heading mb-2" for={`quiz_${question.id}`}>
 					{index + 1}. {question.prompt}
 				</label>
 				<input 
@@ -230,16 +232,16 @@
 					type="text" 
 					bind:value={quizAnswers[question.id]}
 					placeholder="your answer"
-					class="nb-input"
+					class="w-full bg-background border-2 border-border p-3"
 					required
 				>
 			</div>
 		{/each}
 	</form>
 	
-	<div slot="footer">
-		<button class="nb-button nb-button-secondary" on:click={() => showQuizModal = false}>cancel</button>
-		<button class="nb-button nb-button-primary" on:click={submitQuiz}>submit answers</button>
+	<div slot="footer" class="flex gap-3">
+		<button class="bg-foreground/10 border-2 border-border px-4 py-2 font-heading hover:translate-x-1 hover:translate-y-1 transition-transform" on:click={() => showQuizModal = false}>cancel</button>
+		<button class="bg-main text-main-foreground border-2 border-border px-4 py-2 font-heading shadow-shadow hover:translate-x-1 hover:translate-y-1 transition-transform" on:click={submitQuiz}>submit answers</button>
 	</div>
 </Modal>
 
