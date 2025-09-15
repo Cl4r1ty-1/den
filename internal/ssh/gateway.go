@@ -259,8 +259,11 @@ func (g *Gateway) handleOfflineContainer(sshConn *ssh.ServerConn, chans <-chan s
 			log.Printf("could not accept channel: %v", err)
 			continue
 		}
-		message := fmt.Sprintf("hey you! yeah you!\n\ndid you know that your environment is offline?\nto get it back up and running again, just head to the dashboard at https://hack.kim!\n\n(current status: %s)\n\n", status)
-		channel.Write([]byte(message))
+		message := fmt.Sprintf("\r\nhey you! yeah you!\r\n\r\ndid you know that your environment is offline?\r\nto get it back up and running again, just head to the dashboard at https://hack.kim!\r\n\r\n(current status: %s)\r\n\r\n", status)
+		_, err = channel.Write([]byte(message))
+		if err != nil {
+			log.Printf("failed to write offline message: %v", err)
+		}
 		channel.Close()
 	}
 }
