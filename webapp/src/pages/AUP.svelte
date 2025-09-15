@@ -357,7 +357,6 @@
             </p>
           </div>
         </details>
-        ;
 
         <label class="flex items-center gap-2 cursor-pointer">
           <input
