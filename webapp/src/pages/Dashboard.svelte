@@ -170,6 +170,21 @@
 			toastContainer.addToast('Failed to set shell', 'danger')
 		}
 	}
+
+	let actionPending = false
+	async function controlContainer(action: 'start'|'stop'|'restart') {
+		if (!container || actionPending) return
+		actionPending = true
+		try {
+			const res = await fetch(`/user/container/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+			if (!res.ok) { const t = await res.text(); toastContainer.addToast(`Failed to ${action}: ${t}`, 'danger') }
+			else { toastContainer.addToast(`${action} requested`, 'success'); setTimeout(() => location.reload(), 1000) }
+		} catch (e) {
+			toastContainer.addToast(`Failed to ${action}`, 'danger')
+		} finally {
+			actionPending = false
+		}
+	}
 </script>
 
 <div class="min-h-screen bg-background text-foreground">
@@ -252,6 +267,19 @@
 							</div>
 						{/if}
 					</div>
+					{#if container}
+						<div class="flex gap-2 mb-6">
+							<button class="bg-chart-1 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow disabled:opacity-50" disabled={actionPending} on:click={() => controlContainer('stop')}>
+								shutdown
+							</button>
+							<button class="bg-chart-5 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow disabled:opacity-50" disabled={actionPending} on:click={() => controlContainer('restart')}>
+								restart
+							</button>
+							<button class="bg-chart-4 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow disabled:opacity-50" disabled={actionPending} on:click={() => controlContainer('start')}>
+								start
+							</button>
+						</div>
+					{/if}
 					
 					{#if container}
 						<div class="grid md:grid-cols-2 gap-6">

@@ -1463,3 +1463,82 @@ func (h *Handler) SetContainerShell(c *gin.Context) {
 	b, _ := io.ReadAll(resp.Body)
 	c.Data(resp.StatusCode, "application/json", b)
 }
+
+func (h *Handler) ContainerStart(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil || *user.ContainerID == "" {
+        c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+        return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+        return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, *user.ContainerID)
+    body := map[string]interface{}{"action": "start"}
+    bb, _ := json.Marshal(body)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+    defer resp.Body.Close()
+    b, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+        c.JSON(http.StatusOK, gin.H{"ok": true})
+        return
+    }
+    c.Data(resp.StatusCode, "application/json", b)
+}
+
+func (h *Handler) ContainerStop(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil || *user.ContainerID == "" {
+        c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+        return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+        return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, *user.ContainerID)
+    body := map[string]interface{}{"action": "stop"}
+    bb, _ := json.Marshal(body)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+    defer resp.Body.Close()
+    b, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+        c.JSON(http.StatusOK, gin.H{"ok": true})
+        return
+    }
+    c.Data(resp.StatusCode, "application/json", b)
+}
+
+func (h *Handler) ContainerRestart(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil || *user.ContainerID == "" {
+        c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+        return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"})
+        return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, *user.ContainerID)
+    // stop
+    sb, _ := json.Marshal(map[string]interface{}{"action": "stop"})
+    _, _ = http.Post(slaveURL, "application/json", bytes.NewBuffer(sb))
+    time.Sleep(1 * time.Second)
+    // start (this should be pretty easy to tell though)
+    rb, _ := json.Marshal(map[string]interface{}{"action": "start"})
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(rb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+        c.JSON(http.StatusOK, gin.H{"ok": true})
+        return
+    }
+    b, _ := io.ReadAll(resp.Body)
+    c.Data(resp.StatusCode, "application/json", b)
+}
