@@ -1542,3 +1542,18 @@ func (h *Handler) ContainerRestart(c *gin.Context) {
     b, _ := io.ReadAll(resp.Body)
     c.Data(resp.StatusCode, "application/json", b)
 }
+
+func (h *Handler) NotFound(c *gin.Context) {
+	var user *models.User
+	if sessionID, err := c.Cookie("session"); err == nil {
+		if u, err := h.auth.GetUserBySession(sessionID); err == nil && u != nil {
+			user = u
+		}
+	}
+	
+	c.Status(http.StatusNotFound)
+	h.inertia(c, "NotFound", gin.H{
+		"user": user,
+		"path": c.Request.URL.Path,
+	})
+}

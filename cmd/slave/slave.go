@@ -219,36 +219,42 @@ func (s *Slave) updateContainerStatus() error {
 		return err
 	}
 	for _, container := range containers {
-		status, err := s.manager.GetContainerStatus(container.ID)
-		if err != nil {
-			log.Printf("failed to get status for container %s: %v", container.ID, err)
-			continue
-		}
-		payload := map[string]interface{}{
-			"node_token":   s.config.NodeToken,
-			"container_id": container.ID,
-			"status":       status,
-			"timestamp":    time.Now().Unix(),
-		}
+		s.reportContainerStatus(container.ID)
+	}
+	return nil
+}
 
-		data, err := json.Marshal(payload)
-		if err != nil {
-			continue
-		}
-
-		resp, err := s.client.Post(
-			s.config.MasterURL+"/api/containers/"+container.ID+"/status",
-			"application/json",
-			bytes.NewBuffer(data),
-		)
-		if err != nil {
-			log.Printf("failed to report status for container %s: %v", container.ID, err)
-			continue
-		}
-		resp.Body.Close()
+func (s *Slave) reportContainerStatus(containerID string) {
+	status, err := s.manager.GetContainerStatus(containerID)
+	if err != nil {
+		log.Printf("failed to get status for container %s: %v", containerID, err)
+		return
+	}
+	
+	payload := map[string]interface{}{
+		"node_token":   s.config.NodeToken,
+		"container_id": containerID,
+		"status":       status,
+		"timestamp":    time.Now().Unix(),
 	}
 
-	return nil
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("failed to marshal status payload for container %s: %v", containerID, err)
+		return
+	}
+
+	resp, err := s.client.Post(
+		s.config.MasterURL+"/api/containers/"+containerID+"/status",
+		"application/json",
+		bytes.NewBuffer(data),
+	)
+	if err != nil {
+		log.Printf("failed to report status for container %s: %v", containerID, err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("reported status %s for container %s", status, containerID)
 }
 
 func (s *Slave) startAPIServer() {
@@ -481,9 +487,21 @@ func (s *Slave) handleControlContainer(w http.ResponseWriter, r *http.Request) {
     log.Printf("control:start id=%s action=%s", containerID, req.Action)
     switch strings.ToLower(req.Action) {
     case "stop", "pause":
-        if err := s.manager.StopContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
+        if err := s.manager.StopContainer(containerID); err != nil { 
+            opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc()
+            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return 
+        }
+        go s.reportContainerStatus(containerID)
     case "start", "resume":
-        if err := s.manager.StartContainer(containerID); err != nil { opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc(); log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err); http.Error(w, err.Error(), http.StatusInternalServerError); return }
+        if err := s.manager.StartContainer(containerID); err != nil { 
+            opControlTotal.WithLabelValues(strings.ToLower(req.Action), "fail").Inc()
+            log.Printf("control:fail id=%s action=%s error=%v", containerID, req.Action, err)
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return 
+        }
+        go s.reportContainerStatus(containerID)
     case "set_shell":
 		if req.Shell == "" || (req.Shell != "bash" && req.Shell != "zsh" && req.Shell != "fish") { http.Error(w, "invalid shell", http.StatusBadRequest); return }
 		out, err := s.manager.SetDefaultShell(containerID, req.Username, req.Shell)

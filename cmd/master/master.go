@@ -428,5 +428,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		apiProtected.POST("/containers/:id/status", h.APIUpdateContainerStatus)
 	}
 
+	r.NoRoute(h.NotFound)
+
 	return r
 }

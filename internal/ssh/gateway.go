@@ -97,14 +97,15 @@ func (g *Gateway) authenticateUser(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	var containerID sql.NullString
 	var nodeHostname sql.NullString
 	var storedKey sql.NullString
+	var containerStatus sql.NullString
 
 	err := g.db.QueryRow(`
-		SELECT u.id, u.container_id, u.ssh_public_key, n.hostname
+		SELECT u.id, u.container_id, u.ssh_public_key, n.hostname, c.status
 		FROM users u
 		LEFT JOIN containers c ON u.container_id = c.id
 		LEFT JOIN nodes n ON c.node_id = n.id
 		WHERE u.username = $1
-	`, username).Scan(&userID, &containerID, &storedKey, &nodeHostname)
+	`, username).Scan(&userID, &containerID, &storedKey, &nodeHostname, &containerStatus)
 
 	if err != nil {
 		log.Printf("User %s not found: %v", username, err)
@@ -124,10 +125,11 @@ func (g *Gateway) authenticateUser(conn ssh.ConnMetadata, key ssh.PublicKey) (*s
 	}
 	permissions := &ssh.Permissions{
 		Extensions: map[string]string{
-			"user_id":       fmt.Sprintf("%d", userID),
-			"username":      username,
-			"container_id":  containerID.String,
-			"node_hostname": nodeHostname.String,
+			"user_id":          fmt.Sprintf("%d", userID),
+			"username":         username,
+			"container_id":     containerID.String,
+			"node_hostname":    nodeHostname.String,
+			"container_status": containerStatus.String,
 		},
 	}
 
@@ -142,14 +144,15 @@ func (g *Gateway) authenticatePassword(conn ssh.ConnMetadata, password []byte) (
 	var containerID sql.NullString
 	var nodeHostname sql.NullString
 	var hashedPassword sql.NullString
+	var containerStatus sql.NullString
 
 	err := g.db.QueryRow(`
-		SELECT u.id, u.container_id, u.ssh_password, n.hostname
+		SELECT u.id, u.container_id, u.ssh_password, n.hostname, c.status
 		FROM users u
 		LEFT JOIN containers c ON u.container_id = c.id
 		LEFT JOIN nodes n ON c.node_id = n.id
 		WHERE u.username = $1
-	`, username).Scan(&userID, &containerID, &hashedPassword, &nodeHostname)
+	`, username).Scan(&userID, &containerID, &hashedPassword, &nodeHostname, &containerStatus)
 
 	if err != nil {
 		log.Printf("database lookup failed for user %s: %v", username, err)
@@ -174,10 +177,11 @@ func (g *Gateway) authenticatePassword(conn ssh.ConnMetadata, password []byte) (
 	log.Printf("password authentication successful for user %s", username)
 	permissions := &ssh.Permissions{
 		Extensions: map[string]string{
-			"user_id":       fmt.Sprintf("%d", userID),
-			"username":      username,
-			"container_id":  containerID.String,
-			"node_hostname": nodeHostname.String,
+			"user_id":          fmt.Sprintf("%d", userID),
+			"username":         username,
+			"container_id":     containerID.String,
+			"node_hostname":    nodeHostname.String,
+			"container_status": containerStatus.String,
 		},
 	}
 
@@ -201,9 +205,16 @@ func (g *Gateway) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 	containerID := permissions.Extensions["container_id"]
 	nodeHostname := permissions.Extensions["node_hostname"]
 	username := permissions.Extensions["username"]
+	containerStatus := permissions.Extensions["container_status"]
 
 	if containerID == "" {
 		g.handleNoContainer(sshConn, chans, reqs, username)
+		return
+	}
+
+	// Check if container is offline/stopped
+	if containerStatus != "running" {
+		g.handleOfflineContainer(sshConn, chans, reqs, username, containerStatus)
 		return
 	}
 
@@ -229,6 +240,26 @@ func (g *Gateway) handleNoContainer(sshConn *ssh.ServerConn, chans <-chan ssh.Ne
 			continue
 		}
 		message := fmt.Sprintf("hey there %s!\n\nyou don't have an account yet.\nplease visit https://hack.kim/user/dashboard to create one.\n\n", username)
+		channel.Write([]byte(message))
+		channel.Close()
+	}
+}
+
+func (g *Gateway) handleOfflineContainer(sshConn *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, username, status string) {
+	go ssh.DiscardRequests(reqs)
+
+	for newChannel := range chans {
+		if newChannel.ChannelType() != "session" {
+			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			continue
+		}
+
+		channel, _, err := newChannel.Accept()
+		if err != nil {
+			log.Printf("could not accept channel: %v", err)
+			continue
+		}
+		message := fmt.Sprintf("hey you! yeah you!\n\ndid you know that your environment is offline?\nto get it back up and running again, just head to the dashboard at https://hack.kim!\n\n(current status: %s)\n\n", status)
 		channel.Write([]byte(message))
 		channel.Close()
 	}
