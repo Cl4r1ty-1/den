@@ -210,13 +210,17 @@ func (s *Service) GetUserBySession(sessionID string) (*models.User, error) {
 	var tosQ pq.Int64Array
 	err := s.db.QueryRow(`
 		SELECT u.id, u.github_id, u.username, u.email, u.display_name, u.is_admin,
-		       u.container_id, u.ssh_public_key, u.agreed_to_tos, u.agreed_to_privacy, u.tos_questions, u.created_at, u.updated_at
+		       u.container_id, u.ssh_public_key, u.agreed_to_tos, u.agreed_to_privacy, u.tos_questions,
+		       u.approval_status, u.approved_by, u.approved_at, u.rejection_reason,
+		       u.created_at, u.updated_at
 		FROM users u
 		JOIN sessions s ON u.id = s.user_id
 		WHERE s.id = $1 AND s.expires_at > NOW()
 	`, sessionID).Scan(
 		&user.ID, &user.GitHubID, &user.Username, &user.Email, &user.DisplayName,
-		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQ, &user.CreatedAt, &user.UpdatedAt,
+		&user.IsAdmin, &user.ContainerID, &user.SSHPublicKey, &user.AgreedToTOS, &user.AgreedToPrivacy, &tosQ,
+		&user.ApprovalStatus, &user.ApprovedBy, &user.ApprovedAt, &user.RejectionReason,
+		&user.CreatedAt, &user.UpdatedAt,
 	)
 	user.TOSQuestions = make([]int, len(tosQ))
 	for i, v := range tosQ { user.TOSQuestions[i] = int(v) }

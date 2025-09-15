@@ -408,6 +408,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		adminGroup.GET("/users", h.UserManagement)
 		adminGroup.DELETE("/users/:id", h.DeleteUser)
 		adminGroup.DELETE("/users/:id/container", h.AdminDeleteUserContainer)
+        adminGroup.POST("/users/:id/approve", h.AdminApproveUser)
+        adminGroup.POST("/users/:id/reject", h.AdminRejectUser)
         adminGroup.POST("/users/:id/export", h.AdminExportUserContainer)
 		adminGroup.GET("/jobs", h.AdminListJobs)
 		adminGroup.GET("/jobs/:id", h.AdminGetJob)

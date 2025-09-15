@@ -452,6 +452,10 @@ func (h *Handler) GitHubCallback(c *gin.Context) {
 }
 func (h *Handler) UserDashboard(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
+	if strings.ToLower(strings.TrimSpace(user.ApprovalStatus)) != "approved" {
+		h.inertia(c, "PendingApproval", gin.H{"user": user})
+		return
+	}
 	var container *models.Container
 	if user.ContainerID != nil {
 		container = &models.Container{}
@@ -588,6 +592,10 @@ func (h *Handler) GetNewPort(c *gin.Context) {
 func (h *Handler) CreateContainer(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
     requestID := c.GetString("request_id")
+	if strings.ToLower(strings.TrimSpace(user.ApprovalStatus)) != "approved" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account not approved"})
+		return
+	}
 	
 	if user.ContainerID != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "container already exists"})
@@ -968,7 +976,8 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 
 func (h *Handler) UserManagement(c *gin.Context) {
 	rows, err := h.db.Query(`
-		SELECT id, username, email, display_name, is_admin, container_id, created_at
+		SELECT id, username, email, display_name, is_admin, container_id, created_at,
+		       approval_status, approved_by, approved_at, rejection_reason
 		FROM users ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -981,7 +990,8 @@ func (h *Handler) UserManagement(c *gin.Context) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName,
-			&user.IsAdmin, &user.ContainerID, &user.CreatedAt)
+			&user.IsAdmin, &user.ContainerID, &user.CreatedAt,
+			&user.ApprovalStatus, &user.ApprovedBy, &user.ApprovedAt, &user.RejectionReason)
 		if err != nil {
 			continue
 		}
@@ -989,6 +999,32 @@ func (h *Handler) UserManagement(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
+func (h *Handler) AdminApproveUser(c *gin.Context) {
+	admin := c.MustGet("user").(*models.User)
+	if !admin.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+	idStr := c.Param("id")
+	userID, err := strconv.Atoi(idStr)
+	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+	_, err = h.db.Exec(`UPDATE users SET approval_status = 'approved', approved_by = $1, approved_at = NOW(), rejection_reason = NULL, updated_at = NOW() WHERE id = $2`, admin.ID, userID)
+	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve user"}); return }
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) AdminRejectUser(c *gin.Context) {
+	admin := c.MustGet("user").(*models.User)
+	if !admin.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+	idStr := c.Param("id")
+	userID, err := strconv.Atoi(idStr)
+	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+	var req struct { Reason string `json:"reason"` }
+	if err := c.ShouldBindJSON(&req); err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"}); return }
+	var reasonPtr *string
+	if strings.TrimSpace(req.Reason) != "" { r := strings.TrimSpace(req.Reason); reasonPtr = &r }
+	_, err = h.db.Exec(`UPDATE users SET approval_status = 'rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2, updated_at = NOW() WHERE id = $3`, admin.ID, reasonPtr, userID)
+	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject user"}); return }
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
