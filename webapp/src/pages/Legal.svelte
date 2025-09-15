@@ -2,16 +2,16 @@
 </script>
 
 <div class="min-h-screen bg-background text-foreground py-8">
-  <div class="max-w-5xl mx-auto px-6">
+  <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
     <div class="text-center mb-8">
       <h1 class="text-4xl font-heading mb-2">legal</h1>
-      <p class="text-foreground/70">
-        acceptable use policy and privacy policy
-      </p>
+      <p class="text-foreground/70">acceptable use policy and privacy policy</p>
     </div>
 
-    <div class="grid md:grid-cols-2 gap-6 mb-8">
-      <div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8">
+      <div
+        class="bg-secondary-background border-2 border-border p-6 shadow-shadow"
+      >
         <div class="flex items-center gap-3 mb-4">
           <div
             class="w-12 h-12 bg-chart-1 border-2 border-border flex items-center justify-center"
@@ -116,26 +116,23 @@
           <p class="mb-1"><strong>b. System and Network Abuse:</strong></p>
           <ul class="list-disc pl-5 mb-2">
             <li>
-              <strong>Cryptocurrency Mining:</strong> Engaging in any form of
-              cryptocurrency mining, cryptojacking, or participating in mining
-              pools.
+              <strong>Cryptocurrency Mining:</strong> Engaging in any form of cryptocurrency
+              mining, cryptojacking, or participating in mining pools.
             </li>
             <li>
-              <strong>Malicious Activities:</strong> Distributing, hosting, or
-              executing malware, viruses, worms, Trojan horses, or any other
-              code designed to disrupt, damage, or gain unauthorized access to
-              any system.
+              <strong>Malicious Activities:</strong> Distributing, hosting, or executing
+              malware, viruses, worms, Trojan horses, or any other code designed
+              to disrupt, damage, or gain unauthorized access to any system.
             </li>
             <li>
-              <strong>Denial of Service (DoS):</strong> Launching or
-              participating in any form of DoS attack, network flooding, or
-              other activity designed to interfere with the service of any user,
-              host, or network.
+              <strong>Denial of Service (DoS):</strong> Launching or participating
+              in any form of DoS attack, network flooding, or other activity designed
+              to interfere with the service of any user, host, or network.
             </li>
             <li>
-              <strong>Spam and Unsolicited Communication:</strong> Sending or
-              assisting in the transmission of unsolicited bulk email (spam),
-              "mail-bombing," or other harassing communications.
+              <strong>Spam and Unsolicited Communication:</strong> Sending or assisting
+              in the transmission of unsolicited bulk email (spam), "mail-bombing,"
+              or other harassing communications.
             </li>
           </ul>
 
@@ -147,14 +144,13 @@
               without explicit permission.
             </li>
             <li>
-              <strong>Bypassing Limitations:</strong> Attempting to tamper with
-              or bypass any security measures, monitoring, or resource limits
-              put in place by the Service.
+              <strong>Bypassing Limitations:</strong> Attempting to tamper with or
+              bypass any security measures, monitoring, or resource limits put in
+              place by the Service.
             </li>
             <li>
-              <strong>Falsification of Origin:</strong> Forging TCP/IP packet
-              headers, email headers, or any part of a message to disguise its
-              origin or route.
+              <strong>Falsification of Origin:</strong> Forging TCP/IP packet headers,
+              email headers, or any part of a message to disguise its origin or route.
             </li>
           </ul>
 
@@ -165,30 +161,29 @@
               CPU, RAM, disk I/O, or network bandwidth is prohibited.
             </li>
             <li>
-              <strong>Unattended Processes:</strong> Running stand-alone,
-              unattended server-side processes, daemons, or bots that consume
-              significant resources is not permitted without prior arrangement.
+              <strong>Unattended Processes:</strong> Running stand-alone, unattended
+              server-side processes, daemons, or bots that consume significant resources
+              is not permitted without prior arrangement.
             </li>
             <li>
-              <strong>File Sharing:</strong> Running services for peer-to-peer
-              (P2P) file sharing, such as BitTorrent trackers or clients, is
-              forbidden.
+              <strong>File Sharing:</strong> Running services for peer-to-peer (P2P)
+              file sharing, such as BitTorrent trackers or clients, is forbidden.
             </li>
           </ul>
 
           <h4 class="font-bold mt-3 mb-1">4. User Responsibility</h4>
           <ul class="list-disc pl-5 mb-2">
             <li>
-              <strong>Account Security:</strong> You are solely responsible for
-              maintaining the security of your account credentials.
+              <strong>Account Security:</strong> You are solely responsible for maintaining
+              the security of your account credentials.
             </li>
             <li>
               <strong>Provider Policies:</strong> Your use must also comply with
               the acceptable use policies of our upstream providers.
             </li>
             <li>
-              <strong>Compliance with Law:</strong> You are responsible for
-              ensuring all activities comply with applicable laws.
+              <strong>Compliance with Law:</strong> You are responsible for ensuring
+              all activities comply with applicable laws.
             </li>
           </ul>
 
@@ -207,8 +202,8 @@
 
           <h4 class="font-bold mt-3 mb-1">6. Reporting Violations</h4>
           <p class="mb-2">
-            Report violations to <strong>abuse@hack.ngo</strong> with as much
-            detail as possible.
+            Report violations to <strong>abuse@hack.ngo</strong> with as much detail
+            as possible.
           </p>
 
           <h4 class="font-bold mt-3 mb-1">7. Policy Changes</h4>
@@ -219,7 +214,9 @@
         </div>
       </div>
 
-      <div class="bg-secondary-background border-2 border-border p-6 shadow-shadow">
+      <div
+        class="bg-secondary-background border-2 border-border p-6 shadow-shadow"
+      >
         <div class="flex items-center gap-3 mb-4">
           <div
             class="w-12 h-12 bg-chart-2 border-2 border-border flex items-center justify-center"
@@ -269,12 +266,12 @@
 
           <ul class="list-disc pl-5 mb-2">
             <li>
-              <strong>Controller:</strong> The Service is operated by an
-              individual sole trader based in the UK.
+              <strong>Controller:</strong> The Service is operated by an individual
+              sole trader based in the UK.
             </li>
             <li>
-              <strong>Infrastructure:</strong> The Service is hosted in Google
-              Cloud data centres. Some processing may occur outside the UK/EEA.
+              <strong>Infrastructure:</strong> The Service is hosted in Google Cloud
+              data centres. Some processing may occur outside the UK/EEA.
             </li>
           </ul>
 
@@ -321,19 +318,18 @@
           <h4 class="font-bold mt-3 mb-1">Sharing & disclosures</h4>
           <ul class="list-disc pl-5 mb-2">
             <li>
-              <strong>Processors:</strong> Google Cloud (hosting), Cloudflare
-              (DNS).
+              <strong>Processors:</strong> Google Cloud (hosting), Cloudflare (DNS).
             </li>
             <li>
-              <strong>Authorities:</strong> Shared if legally required or to
-              protect safety.
+              <strong>Authorities:</strong> Shared if legally required or to protect
+              safety.
             </li>
           </ul>
 
           <h4 class="font-bold mt-3 mb-1">International transfers</h4>
           <p class="mb-2">
-            Where data leaves the UK/EEA, safeguards like SCCs and certifications
-            apply.
+            Where data leaves the UK/EEA, safeguards like SCCs and
+            certifications apply.
           </p>
 
           <h4 class="font-bold mt-3 mb-1">Security</h4>

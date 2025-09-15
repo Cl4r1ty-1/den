@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -8,6 +8,22 @@
   </head>
   <body>
     <div id="app"></div>
+    <footer
+      class="bg-secondary-background text-foreground border-t-2 border-border mt-8"
+    >
+      <div
+        class="max-w-6xl mx-auto px-6 py-4 text-sm flex flex-col md:flex-row items-center justify-between gap-2"
+      >
+        <div class="opacity-80">Copyright {new Date().getFullYear?.() || ''} den</div>
+        <nav class="flex items-center gap-4">
+          <a href="/legal" class="hover:underline">legal</a>
+          <a href="/login" class="hover:underline">login</a>
+          <a href="mailto:support@hack.ngo" class="hover:underline"
+            >support@hack.ngo</a
+          >
+        </nav>
+      </div>
+    </footer>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
