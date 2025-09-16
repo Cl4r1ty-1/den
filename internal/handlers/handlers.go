@@ -1172,6 +1172,48 @@ func (h *Handler) AdminDeleteUserContainer(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"queued": true, "job_id": jobID})
 }
 
+func (h *Handler) AdminRotateUserContainerToken(c *gin.Context) {
+    admin := c.MustGet("user").(*models.User)
+    if !admin.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+    userID, err := strconv.Atoi(c.Param("id"))
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+    var containerID, nodeHostname string
+    if err := h.db.QueryRow(`SELECT c.id, n.hostname FROM users u JOIN containers c ON u.container_id=c.id JOIN nodes n ON c.node_id=n.id WHERE u.id=$1`, userID).Scan(&containerID, &nodeHostname); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "user has no container"}); return
+    }
+    b := make([]byte, 24)
+    if _, err := rand.Read(b); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "token gen failed"}); return }
+    newTok := hex.EncodeToString(b)
+    if _, err := h.db.Exec(`UPDATE containers SET container_token=$1, updated_at=NOW() WHERE id=$2`, newTok, containerID); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/cli/token", nodeHostname)
+    body := map[string]string{"container_id": containerID, "token": newTok}
+    bb, _ := json.Marshal(body)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 { c.JSON(http.StatusBadGateway, gin.H{"error": "node rejected token write"}); return }
+    c.JSON(http.StatusOK, gin.H{"ok": true, "container_token": newTok})
+}
+
+func (h *Handler) AdminReinstallUserCLI(c *gin.Context) {
+    admin := c.MustGet("user").(*models.User)
+    if !admin.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }
+    userID, err := strconv.Atoi(c.Param("id"))
+    if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+    var containerID, nodeHostname string
+    if err := h.db.QueryRow(`SELECT c.id, n.hostname FROM users u JOIN containers c ON u.container_id=c.id JOIN nodes n ON c.node_id=n.id WHERE u.id=$1`, userID).Scan(&containerID, &nodeHostname); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "user has no container"}); return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/cli/install", nodeHostname)
+    body := map[string]string{"container_id": containerID}
+    bb, _ := json.Marshal(body)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 { b, _ := io.ReadAll(resp.Body); c.JSON(resp.StatusCode, gin.H{"error": strings.TrimSpace(string(b))}); return }
+    c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) AdminListJobs(c *gin.Context) {
     user := c.MustGet("user").(*models.User)
     if !user.IsAdmin { c.JSON(http.StatusForbidden, gin.H{"error": "admin required"}); return }

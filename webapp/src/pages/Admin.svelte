@@ -140,6 +140,30 @@
     loadUsers();
   }
 
+  async function rotateToken(userId) {
+    const res = await fetch(`/admin/users/${userId}/rotate-token`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (data.error) {
+      toastContainer.addToast(data.error, "danger");
+      return;
+    }
+    toastContainer.addToast("Container token rotated", "success");
+  }
+
+  async function reinstallCLI(userId) {
+    const res = await fetch(`/admin/users/${userId}/reinstall-cli`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (data.error) {
+      toastContainer.addToast(data.error, "danger");
+      return;
+    }
+    toastContainer.addToast("CLI reinstalled", "success");
+  }
+
   async function pollJob(jobId) {
     for (let i = 0; i < 90; i++) {
       try {
@@ -582,6 +606,18 @@
                             ></path>
                           </svg>
                           delete container
+                        </button>
+                        <button
+                          class="bg-chart-2 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+                          on:click={() => rotateToken(user.id)}
+                        >
+                          rotate token
+                        </button>
+                        <button
+                          class="bg-chart-3 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+                          on:click={() => reinstallCLI(user.id)}
+                        >
+                          reinstall cli
                         </button>
                       {/if}
                       <button
