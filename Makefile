@@ -15,8 +15,8 @@ build-webapp:
 	cd webapp && npm run build
 
 
-CLI_SRC=./cli/den
-CLI_DIST=./cli/dist
+CLI_SRC=cli/den
+CLI_DIST=cli/dist
 
 build-cli: build-cli-linux build-cli-checksums
 
