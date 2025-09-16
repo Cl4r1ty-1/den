@@ -322,6 +322,9 @@ func (m *Manager) DeleteContainer(containerID string) error {
 }
 
 func (m *Manager) StopContainer(containerID string) error {
+    if status, _ := m.GetContainerStatus(containerID); strings.Contains(strings.ToLower(status), "stop") || strings.Contains(strings.ToLower(status), "shut") {
+        return nil
+    }
     stopCmd := exec.Command("lxc", "stop", containerID)
     if err := stopCmd.Run(); err != nil {
         return fmt.Errorf("failed to stop container: %w", err)
@@ -330,6 +333,9 @@ func (m *Manager) StopContainer(containerID string) error {
 }
 
 func (m *Manager) StartContainer(containerID string) error {
+    if status, _ := m.GetContainerStatus(containerID); strings.Contains(strings.ToLower(status), "run") || strings.Contains(strings.ToLower(status), "started") {
+        return nil
+    }
     startCmd := exec.Command("lxc", "start", containerID)
     if err := startCmd.Run(); err != nil {
         return fmt.Errorf("failed to start container: %w", err)
