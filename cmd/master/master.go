@@ -265,7 +265,7 @@ func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error 
     }
 
     {
-        body, _ := json.Marshal(map[string]string{"container_id": containerID, "token": containerToken})
+        body, _ := json.Marshal(map[string]string{"container_id": containerID, "token": containerToken, "username": p.Username})
         resp, err := http.Post(slaveURL+"/api/cli/token", "application/json", bytes.NewBuffer(body))
         if err != nil {
             log.Printf("post /api/cli/token failed for %s: %v", containerID, err)
@@ -459,6 +459,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
         cliGroup.GET("/me", h.CLIMe)
         cliGroup.GET("/container/stats", h.CLIContainerStats)
         cliGroup.POST("/container/:action", h.CLIContainerControl)
+        cliGroup.GET("/container/ports", h.CLIContainerPorts)
+        cliGroup.POST("/container/ports/new", h.CLIContainerNewPort)
     }
 
 	apiGroup := r.Group("/api")

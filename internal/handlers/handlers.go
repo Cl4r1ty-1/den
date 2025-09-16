@@ -465,6 +465,41 @@ func (h *Handler) CLIContainerControl(c *gin.Context) {
     b, _ := io.ReadAll(resp.Body)
     c.Data(resp.StatusCode, "application/json", b)
 }
+
+func (h *Handler) CLIContainerPorts(c *gin.Context) {
+    containerID := c.GetString("cli_container_id")
+    var ports pq.Int64Array
+    if err := h.db.QueryRow(`SELECT allocated_ports FROM containers WHERE id=$1`, containerID).Scan(&ports); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return
+    }
+    out := make([]int, len(ports))
+    for i, p := range ports { out[i] = int(p) }
+    c.JSON(http.StatusOK, gin.H{"ports": out})
+}
+
+func (h *Handler) CLIContainerNewPort(c *gin.Context) {
+    containerID := c.GetString("cli_container_id")
+    nodeHostname := c.GetString("cli_node_hostname")
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    payload := map[string]string{"container_id": containerID}
+    body, _ := json.Marshal(payload)
+    resp, err := http.Post(slaveURL+"/api/ports/new", "application/json", bytes.NewBuffer(body))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        c.JSON(http.StatusBadGateway, gin.H{"error": string(b)})
+        return
+    }
+    var res struct{ Port int `json:"port"` }
+    if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "invalid node response"}); return
+    }
+    if _, err := h.db.Exec(`UPDATE containers SET allocated_ports = array_append(allocated_ports, $1), updated_at = NOW() WHERE id = $2`, res.Port, containerID); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist port"}); return
+    }
+    c.JSON(http.StatusOK, gin.H{"port": res.Port})
+}
 func (h *Handler) Home(c *gin.Context) {
 	props := gin.H{}
 	if sessionID, err := c.Cookie("session"); err == nil {
@@ -625,7 +660,7 @@ func (h *Handler) RotateContainerToken(c *gin.Context) {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"}); return
     }
     slaveURL := fmt.Sprintf("http://%s:8081/api/cli/token", nodeHostname)
-    body := map[string]string{"container_id": *user.ContainerID, "token": newTok}
+    body := map[string]string{"container_id": *user.ContainerID, "token": newTok, "username": user.Username}
     bb, _ := json.Marshal(body)
     resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
     if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
@@ -1186,7 +1221,9 @@ func (h *Handler) AdminRotateUserContainerToken(c *gin.Context) {
     newTok := hex.EncodeToString(b)
     if _, err := h.db.Exec(`UPDATE containers SET container_token=$1, updated_at=NOW() WHERE id=$2`, newTok, containerID); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
     slaveURL := fmt.Sprintf("http://%s:8081/api/cli/token", nodeHostname)
-    body := map[string]string{"container_id": containerID, "token": newTok}
+    var username string
+    _ = h.db.QueryRow(`SELECT username FROM users WHERE id = $1`, userID).Scan(&username)
+    body := map[string]string{"container_id": containerID, "token": newTok, "username": username}
     bb, _ := json.Marshal(body)
     resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
     if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }

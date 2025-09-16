@@ -49,6 +49,14 @@ func main() {
         token, err := resolveToken(*tokenFlag)
         if err != nil { fail(err) }
         if err := cmdControl(client, baseURL, token, cmd); err != nil { fail(err) }
+    case "ports":
+        token, err := resolveToken(*tokenFlag)
+        if err != nil { fail(err) }
+        if err := cmdPorts(client, baseURL, token); err != nil { fail(err) }
+    case "get_port":
+        token, err := resolveToken(*tokenFlag)
+        if err != nil { fail(err) }
+        if err := cmdGetPort(client, baseURL, token); err != nil { fail(err) }
     case "update":
         if err := cmdUpdate(client, baseURL); err != nil { fail(err) }
     default:
@@ -64,6 +72,8 @@ func usage() {
     fmt.Println("  den [--token TOKEN] [--url BASE_URL] me")
     fmt.Println("  den [--token TOKEN] [--url BASE_URL] stats")
     fmt.Println("  den [--token TOKEN] [--url BASE_URL] start|stop|restart")
+    fmt.Println("  den [--token TOKEN] [--url BASE_URL] ports")
+    fmt.Println("  den [--token TOKEN] [--url BASE_URL] get_port")
     fmt.Println("  den [--url BASE_URL] update")
     fmt.Println()
     fmt.Println("Token resolution order: --token, DEN_CONTAINER_TOKEN, /etc/den/container_token, $HOME/.config/den/token")
@@ -154,6 +164,41 @@ func cmdControl(client httpClient, baseURL, token, action string) error {
         return fmt.Errorf("%s", strings.TrimSpace(string(b)))
     }
     fmt.Println("ok")
+    return nil
+}
+
+func cmdPorts(client httpClient, baseURL, token string) error {
+    req, err := newRequest(http.MethodGet, baseURL+"/cli/container/ports", token, nil)
+    if err != nil { return err }
+    resp, err := client.Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+    }
+    var out map[string][]int
+    if err := json.NewDecoder(resp.Body).Decode(&out); err != nil { return err }
+    ports := out["ports"]
+    for _, p := range ports { fmt.Println(p) }
+    return nil
+}
+
+func cmdGetPort(client httpClient, baseURL, token string) error {
+    reqBody := bytes.NewBufferString("{}")
+    req, err := newRequest(http.MethodPost, baseURL+"/cli/container/ports/new", token, reqBody)
+    if err != nil { return err }
+    req.Header.Set("Content-Type", "application/json")
+    resp, err := client.Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        b, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+    }
+    var out map[string]int
+    if err := json.NewDecoder(resp.Body).Decode(&out); err != nil { return err }
+    fmt.Println(out["port"])
     return nil
 }
 

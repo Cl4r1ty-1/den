@@ -626,6 +626,7 @@ func (s *Slave) handleWriteContainerToken(w http.ResponseWriter, r *http.Request
     var req struct {
         ContainerID string `json:"container_id"`
         Token       string `json:"token"`
+        Username    string `json:"username"`
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         http.Error(w, "invalid request", http.StatusBadRequest)
@@ -641,8 +642,14 @@ func (s *Slave) handleWriteContainerToken(w http.ResponseWriter, r *http.Request
         http.Error(w, "mkdir failed", http.StatusInternalServerError)
         return
     }
-    safe := strings.ReplaceAll(req.Token, "'", "'\\''")
-    sh := fmt.Sprintf("set -euo pipefail; printf '%s' > /etc/den/container_token; chmod 600 /etc/den/container_token", safe)
+    safeToken := strings.ReplaceAll(req.Token, "'", "'\\''")
+    safeUser := strings.TrimSpace(req.Username)
+    var sh string
+    if safeUser != "" {
+        sh = fmt.Sprintf("set -euo pipefail; printf '%s' > /etc/den/container_token; chmod 600 /etc/den/container_token; uhome=$(getent passwd '%s' | cut -d: -f6); if [ -n \"$uhome\" ]; then mkdir -p \"$uhome/.config/den\"; printf '%s' > \"$uhome/.config/den/token\"; chown -R '%s':'%s' \"$uhome/.config/den\"; chmod 600 \"$uhome/.config/den/token\"; fi", safeToken, safeUser, safeToken, safeUser, safeUser)
+    } else {
+        sh = fmt.Sprintf("set -euo pipefail; printf '%s' > /etc/den/container_token; chmod 644 /etc/den/container_token", safeToken)
+    }
     cmd := exec.Command("lxc", "exec", req.ContainerID, "--", "bash", "-lc", sh)
     if out, err := cmd.CombinedOutput(); err != nil {
         log.Printf("cli:write_token_fail id=%s err=%v out=%q", req.ContainerID, err, string(out))
