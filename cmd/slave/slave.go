@@ -273,6 +273,8 @@ func (s *Slave) startAPIServer() {
 	mux.HandleFunc("/api/ports", s.handlePortMapping)
     mux.HandleFunc("/api/ports/new", s.handleAllocateNewPort)
 	mux.HandleFunc("/api/ssh", s.handleSSHSetup)
+	mux.HandleFunc("/api/cli/token", s.handleWriteContainerToken)
+	mux.HandleFunc("/api/cli/install", s.handleInstallCLI)
 	
 	server := &http.Server{
 		Addr:    ":8081",
@@ -615,4 +617,64 @@ func (s *Slave) handleSSHSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	w.WriteHeader(http.StatusOK)
+}
+func (s *Slave) handleWriteContainerToken(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req struct {
+        ContainerID string `json:"container_id"`
+        Token       string `json:"token"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "invalid request", http.StatusBadRequest)
+        return
+    }
+    if strings.TrimSpace(req.ContainerID) == "" || strings.TrimSpace(req.Token) == "" {
+        http.Error(w, "missing fields", http.StatusBadRequest)
+        return
+    }
+    mk := exec.Command("lxc", "exec", req.ContainerID, "--", "mkdir", "-p", "/etc/den")
+    if out, err := mk.CombinedOutput(); err != nil {
+        log.Printf("cli:mkdir_fail id=%s err=%v out=%q", req.ContainerID, err, string(out))
+        http.Error(w, "mkdir failed", http.StatusInternalServerError)
+        return
+    }
+    safe := strings.ReplaceAll(req.Token, "'", "'\\''")
+    sh := fmt.Sprintf("set -euo pipefail; printf '%s' > /etc/den/container_token; chmod 600 /etc/den/container_token", safe)
+    cmd := exec.Command("lxc", "exec", req.ContainerID, "--", "bash", "-lc", sh)
+    if out, err := cmd.CombinedOutput(); err != nil {
+        log.Printf("cli:write_token_fail id=%s err=%v out=%q", req.ContainerID, err, string(out))
+        http.Error(w, "write token failed", http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func (s *Slave) handleInstallCLI(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+    var req struct { ContainerID string `json:"container_id"` }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "invalid request", http.StatusBadRequest); return }
+    if strings.TrimSpace(req.ContainerID) == "" { http.Error(w, "missing container_id", http.StatusBadRequest); return }
+    archCmd := exec.Command("lxc", "exec", req.ContainerID, "--", "bash", "-lc", "dpkg --print-architecture 2>/dev/null || uname -m")
+    out, err := archCmd.CombinedOutput()
+    if err != nil { http.Error(w, "arch detect failed", http.StatusInternalServerError); return }
+    arch := strings.TrimSpace(string(out))
+    var asset string
+    switch arch {
+    case "amd64", "x86_64": asset = "den-linux-amd64"
+    case "arm64", "aarch64": asset = "den-linux-arm64"
+    default: asset = "den-linux-amd64"
+    }
+    url := s.config.MasterURL + "/assets/cli/" + asset
+    sh := fmt.Sprintf("set -euo pipefail; curl -fsSL %q -o /usr/local/bin/den; chmod +x /usr/local/bin/den", url)
+    cmd := exec.Command("lxc", "exec", req.ContainerID, "--", "bash", "-lc", sh)
+    if out, err := cmd.CombinedOutput(); err != nil {
+        log.Printf("cli:install_fail id=%s err=%v out=%q", req.ContainerID, err, string(out))
+        http.Error(w, "install failed", http.StatusInternalServerError); return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }

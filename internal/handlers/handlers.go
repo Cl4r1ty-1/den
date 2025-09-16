@@ -395,6 +395,76 @@ func (h *Handler) RequireNodeAuth() gin.HandlerFunc {
 		c.Next()
 	}
 }
+func (h *Handler) RequireCLIAuth() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        token := c.GetHeader("Authorization")
+        if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+            token = strings.TrimSpace(token[7:])
+        }
+        if token == "" {
+            token = c.GetHeader("Den-Container-Token")
+        }
+        if token == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "missing container token"})
+            c.Abort(); return
+        }
+        var containerID string
+        var userID int
+        var nodeHostname string
+        err := h.db.QueryRow(`SELECT c.id, c.user_id, n.hostname FROM containers c JOIN nodes n ON c.node_id = n.id WHERE c.container_token = $1`, token).Scan(&containerID, &userID, &nodeHostname)
+        if err != nil {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid container token"})
+            c.Abort(); return
+        }
+        c.Set("cli_container_id", containerID)
+        c.Set("cli_user_id", userID)
+        c.Set("cli_node_hostname", nodeHostname)
+        c.Next()
+    }
+}
+func (h *Handler) CLIMe(c *gin.Context) {
+    userID := c.GetInt("cli_user_id")
+    containerID := c.GetString("cli_container_id")
+    var user models.User
+    err := h.db.QueryRow(`SELECT id, username, email, display_name, is_admin FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.IsAdmin)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    var cont models.Container
+    err = h.db.QueryRow(`SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at FROM containers WHERE id = $1`, containerID).Scan(&cont.ID, &cont.UserID, &cont.NodeID, &cont.Name, &cont.Status, &cont.IPAddress, &cont.SSHPort, &cont.MemoryMB, &cont.CPUCores, &cont.StorageGB, pq.Array(&cont.AllocatedPorts), &cont.CreatedAt, &cont.UpdatedAt)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    c.JSON(http.StatusOK, gin.H{"user": user, "container": cont})
+}
+
+func (h *Handler) CLIContainerStats(c *gin.Context) {
+    containerID := c.GetString("cli_container_id")
+    nodeHostname := c.GetString("cli_node_hostname")
+    slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+    resp, err := http.Get(slaveURL+"/api/containers-stats/"+containerID)
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
+    defer resp.Body.Close()
+    b, _ := io.ReadAll(resp.Body)
+    c.Data(resp.StatusCode, "application/json", b)
+}
+
+func (h *Handler) CLIContainerControl(c *gin.Context) {
+    action := c.Param("action")
+    if action != "start" && action != "stop" && action != "restart" { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"}); return }
+    containerID := c.GetString("cli_container_id")
+    nodeHostname := c.GetString("cli_node_hostname")
+    slaveURL := fmt.Sprintf("http://%s:8081/api/control/containers/%s", nodeHostname, containerID)
+    if action == "restart" {
+        sb, _ := json.Marshal(map[string]interface{}{"action": "stop"})
+        _, _ = http.Post(slaveURL, "application/json", bytes.NewBuffer(sb))
+        time.Sleep(1 * time.Second)
+        action = "start"
+    }
+    body, _ := json.Marshal(map[string]interface{}{"action": action})
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(body))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode >= 200 && resp.StatusCode < 300 { c.JSON(http.StatusOK, gin.H{"ok": true}); return }
+    b, _ := io.ReadAll(resp.Body)
+    c.Data(resp.StatusCode, "application/json", b)
+}
 func (h *Handler) Home(c *gin.Context) {
 	props := gin.H{}
 	if sessionID, err := c.Cookie("session"); err == nil {
@@ -523,6 +593,47 @@ func (h *Handler) ContainerStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, container)
+}
+func (h *Handler) ContainerToken(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil || *user.ContainerID == "" {
+        c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+        return
+    }
+    var token string
+    if err := h.db.QueryRow(`SELECT container_token FROM containers WHERE id = $1`, *user.ContainerID).Scan(&token); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"container_token": token})
+}
+
+func (h *Handler) RotateContainerToken(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    if user.ContainerID == nil || *user.ContainerID == "" {
+        c.JSON(http.StatusNotFound, gin.H{"error": "no container"})
+        return
+    }
+    b := make([]byte, 24)
+    if _, err := rand.Read(b); err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "token gen failed"}); return }
+    newTok := hex.EncodeToString(b)
+    if _, err := h.db.Exec(`UPDATE containers SET container_token=$1, updated_at=NOW() WHERE id=$2`, newTok, *user.ContainerID); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return
+    }
+    var nodeHostname string
+    if err := h.db.QueryRow(`SELECT n.hostname FROM nodes n JOIN containers c ON c.node_id=n.id WHERE c.id=$1`, *user.ContainerID).Scan(&nodeHostname); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "node lookup failed"}); return
+    }
+    slaveURL := fmt.Sprintf("http://%s:8081/api/cli/token", nodeHostname)
+    body := map[string]string{"container_id": *user.ContainerID, "token": newTok}
+    bb, _ := json.Marshal(body)
+    resp, err := http.Post(slaveURL, "application/json", bytes.NewBuffer(bb))
+    if err != nil { c.JSON(http.StatusBadGateway, gin.H{"error": "node unreachable"}); return }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        c.JSON(http.StatusBadGateway, gin.H{"error": "node rejected token write"}); return
+    }
+    c.JSON(http.StatusOK, gin.H{"container_token": newTok})
 }
 func (h *Handler) ContainerStats(c *gin.Context) {
     user := c.MustGet("user").(*models.User)
@@ -1227,11 +1338,16 @@ func (h *Handler) APICreateContainer(c *gin.Context) {
 		return
 	}
 	containerID := containerInfo["ID"].(string)
+	tokenBytes := make([]byte, 24)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"}); return
+	}
+	ctoken := hex.EncodeToString(tokenBytes)
 	_, err = h.db.Exec(`
-		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, container_token)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`, containerID, req.UserID, req.NodeID, containerInfo["Name"], "RUNNING", 
-		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15)
+		containerInfo["IP"], containerInfo["SSHPort"], 4096, 4, 15, ctoken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store container info"})
 		return
@@ -1240,6 +1356,12 @@ func (h *Handler) APICreateContainer(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
 		return
+	}
+	if err := h.db.QueryRow("SELECT hostname FROM nodes WHERE id = $1", req.NodeID).Scan(&nodeHostname); err == nil {
+		slaveURL := fmt.Sprintf("http://%s:8081", nodeHostname)
+		payload := map[string]string{"container_id": containerID, "token": ctoken}
+		bb, _ := json.Marshal(payload)
+		go http.Post(slaveURL+"/api/cli/token", "application/json", bytes.NewBuffer(bb))
 	}
 	
 	c.JSON(http.StatusOK, containerInfo)

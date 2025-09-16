@@ -251,15 +251,26 @@ func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error 
         sshPort = v
     }
 
-    if _, err := db.Exec(`INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports) VALUES ($1,$2,$3,$4,'RUNNING',$5,$6,4096,4,15,$7)`,
-        containerID, p.UserID, nodeID, name, ip, sshPort, pq.Array([]int{})); err != nil {
+    tokenBytes := make([]byte, 24)
+    if _, err := crand.Read(tokenBytes); err != nil { return finalizeJob(db, jobID, false, "token gen failed", nil) }
+    containerToken := hex.EncodeToString(tokenBytes)
+
+    if _, err := db.Exec(`INSERT INTO containers (id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports, container_token) VALUES ($1,$2,$3,$4,'RUNNING',$5,$6,4096,4,15,$7,$8)`,
+        containerID, p.UserID, nodeID, name, ip, sshPort, pq.Array([]int{}), containerToken); err != nil {
         return finalizeJob(db, jobID, false, "db insert failed", nil)
     }
     if _, err := db.Exec(`UPDATE users SET container_id = $1, updated_at = NOW() WHERE id = $2`, containerID, p.UserID); err != nil {
         return finalizeJob(db, jobID, false, "db update user failed", nil)
     }
 
-    res := map[string]interface{}{ "container_id": containerID, "ip_address": ip, "ssh_port": sshPort }
+    go func() {
+        body, _ := json.Marshal(map[string]string{"container_id": containerID, "token": containerToken})
+        _, _ = http.Post(slaveURL+"/api/cli/token", "application/json", bytes.NewBuffer(body))
+        installBody, _ := json.Marshal(map[string]string{"container_id": containerID})
+        _, _ = http.Post(slaveURL+"/api/cli/install", "application/json", bytes.NewBuffer(installBody))
+    }()
+
+    res := map[string]interface{}{ "container_id": containerID, "ip_address": ip, "ssh_port": sshPort, "container_token": containerToken }
     rb, _ := json.Marshal(res)
     return finalizeJob(db, jobID, true, "", rb)
 }
@@ -363,6 +374,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	r.Static("/static", "./web/static")
 	r.Static("/assets", "./webapp/dist/assets")
 	r.StaticFile("/vite.svg", "./webapp/dist/vite.svg")
+    r.Static("/assets/cli", "./cli/dist")
 
     h := handlers.New(authService, db)
 
@@ -386,6 +398,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.POST("/container/start", h.ContainerStart)
 		userGroup.POST("/container/stop", h.ContainerStop)
 		userGroup.POST("/container/restart", h.ContainerRestart)
+		userGroup.GET("/container/token", h.ContainerToken)
+		userGroup.POST("/container/token/rotate", h.RotateContainerToken)
 		userGroup.POST("/container/create", h.CreateContainer)
 		userGroup.POST("/container/ports/new", h.GetNewPort)
 		userGroup.GET("/subdomains", h.SubdomainManagement)
@@ -415,6 +429,14 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		adminGroup.GET("/jobs", h.AdminListJobs)
 		adminGroup.GET("/jobs/:id", h.AdminGetJob)
 	}
+
+    cliGroup := r.Group("/cli")
+    cliGroup.Use(h.RequireCLIAuth())
+    {
+        cliGroup.GET("/me", h.CLIMe)
+        cliGroup.GET("/container/stats", h.CLIContainerStats)
+        cliGroup.POST("/container/:action", h.CLIContainerControl)
+    }
 
 	apiGroup := r.Group("/api")
 	{

@@ -61,6 +61,7 @@ type Container struct {
 	CPUCores       int       `json:"cpu_cores" db:"cpu_cores"`
 	StorageGB      int       `json:"storage_gb" db:"storage_gb"`
 	AllocatedPorts []int     `json:"allocated_ports" db:"allocated_ports"`
+	ContainerToken string    `json:"container_token" db:"container_token"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
