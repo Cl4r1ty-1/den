@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"database/sql"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -426,11 +427,19 @@ func (h *Handler) CLIMe(c *gin.Context) {
     userID := c.GetInt("cli_user_id")
     containerID := c.GetString("cli_container_id")
     var user models.User
-    err := h.db.QueryRow(`SELECT id, username, email, display_name, is_admin FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.IsAdmin)
+    var email sql.NullString
+    var displayName sql.NullString
+    err := h.db.QueryRow(`SELECT id, username, email, display_name, is_admin FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &email, &displayName, &user.IsAdmin)
     if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    user.Email = email.String
+    user.DisplayName = displayName.String
     var cont models.Container
-    err = h.db.QueryRow(`SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at FROM containers WHERE id = $1`, containerID).Scan(&cont.ID, &cont.UserID, &cont.NodeID, &cont.Name, &cont.Status, &cont.IPAddress, &cont.SSHPort, &cont.MemoryMB, &cont.CPUCores, &cont.StorageGB, pq.Array(&cont.AllocatedPorts), &cont.CreatedAt, &cont.UpdatedAt)
+    var ip sql.NullString
+    var ports pq.Int64Array
+    err = h.db.QueryRow(`SELECT id, user_id, node_id, name, status, ip_address, ssh_port, memory_mb, cpu_cores, storage_gb, allocated_ports, created_at, updated_at FROM containers WHERE id = $1`, containerID).Scan(&cont.ID, &cont.UserID, &cont.NodeID, &cont.Name, &cont.Status, &ip, &cont.SSHPort, &cont.MemoryMB, &cont.CPUCores, &cont.StorageGB, &ports, &cont.CreatedAt, &cont.UpdatedAt)
     if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+    if ip.Valid { s := ip.String; cont.IPAddress = &s } else { cont.IPAddress = nil }
+    if len(ports) > 0 { cont.AllocatedPorts = make([]int, len(ports)); for i, p := range ports { cont.AllocatedPorts[i] = int(p) } }
     c.JSON(http.StatusOK, gin.H{"user": user, "container": cont})
 }
 
