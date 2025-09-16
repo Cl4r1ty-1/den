@@ -395,7 +395,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	r.Static("/static", "./web/static")
 	r.Static("/assets", "./webapp/dist/assets")
 	r.StaticFile("/vite.svg", "./webapp/dist/vite.svg")
-    r.Static("/assets/cli", "./cli/dist")
+    r.Static("/downloads/cli", "./cli/dist")
 
     h := handlers.New(authService, db)
 

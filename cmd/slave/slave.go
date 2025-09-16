@@ -668,7 +668,7 @@ func (s *Slave) handleInstallCLI(w http.ResponseWriter, r *http.Request) {
     case "arm64", "aarch64": asset = "den-linux-arm64"
     default: asset = "den-linux-amd64"
     }
-    url := s.config.MasterURL + "/assets/cli/" + asset
+    url := s.config.MasterURL + "/downloads/cli/" + asset
     sh := fmt.Sprintf("set -euo pipefail; curl -fsSL %q -o /usr/local/bin/den; chmod +x /usr/local/bin/den", url)
     cmd := exec.Command("lxc", "exec", req.ContainerID, "--", "bash", "-lc", sh)
     if out, err := cmd.CombinedOutput(); err != nil {

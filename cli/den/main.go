@@ -163,8 +163,8 @@ func cmdUpdate(client httpClient, baseURL string) error {
         return fmt.Errorf("unsupported architecture: %s", arch)
     }
     binName := "den-linux-" + arch
-    binURL := baseURL + "/assets/cli/" + binName
-    sumsURL := baseURL + "/assets/cli/SHA256SUMS"
+    binURL := baseURL + "/downloads/cli/" + binName
+    sumsURL := baseURL + "/downloads/cli/SHA256SUMS"
 
     b, err := httpGetBytes(client, binURL)
     if err != nil { return fmt.Errorf("download failed: %w", err) }
