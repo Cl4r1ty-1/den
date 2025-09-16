@@ -156,7 +156,28 @@ func (m *Manager) waitForContainer(name string) error {
 }
 
 func (m *Manager) setupUserInContainer(containerName, username string) error {
+	readme := fmt.Sprintf(
+		"Welcome to den!\n\n"+
+		"This environment is registered to user: %s\n"+
+		"Node: %s\n\n"+
+		"Preinstalled packages:\n"+
+		"  - openssh-server, sudo, curl, git, vim, htop, nano, zsh, fish\n\n"+
+		"den CLI usage (inside this container):\n"+
+		"  - den me\n"+
+		"  - den stats\n"+
+		"  - den start|stop|restart\n"+
+		"  - den ports\n"+
+		"  - den get_port\n"+
+		"  - den update\n\n"+
+		"Token locations:\n"+
+		"  - /etc/den/container_token (root-readable)\n"+
+		"  - $HOME/.config/den/token (user-readable)\n\n"+
+		"Have fun and hack responsibly.\n",
+		username, m.getDisplayHostname(),
+	)
+	safe := strings.ReplaceAll(readme, "'", "'\\''")
 	commands := [][]string{
+		{"lxc", "exec", containerName, "--", "bash", "-lc", fmt.Sprintf("mkdir -p /etc/skel; printf '%s' > /etc/skel/README; chmod 0644 /etc/skel/README", safe)},
 		{"lxc", "exec", containerName, "--", "useradd", "-m", "-s", "/bin/bash", username},
 		{"lxc", "exec", containerName, "--", "usermod", "-aG", "sudo", username},
 		{"lxc", "exec", containerName, "--", "mkdir", "-p", fmt.Sprintf("/home/%s/.ssh", username)},
