@@ -179,7 +179,10 @@
 							<div class="bg-background border-2 border-border p-3 font-mono text-sm">
 								ssh-keygen -t ed25519 -C "your@email.com"
 							</div>
-							<p class="text-sm mt-2 text-main-foreground">then copy the contents of <code class="font-mono bg-background px-1 border border-border">~/.ssh/id_ed25519.pub</code></p>
+							<div class="text-sm mt-2 flex items-center gap-2">
+								<p class="text-main-foreground">then copy the contents of </p>
+								<code class="font-mono bg-background px-1 border border-border">~/.ssh/id_ed25519.pub</code> 
+							</div>						
 						</div>
 					</div>
 				</div>
