@@ -16,6 +16,7 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"math"
+    "strings"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
@@ -263,12 +264,32 @@ func handleCreateContainerJob(db *database.DB, jobID int, payload []byte) error 
         return finalizeJob(db, jobID, false, "db update user failed", nil)
     }
 
-    go func() {
+    {
         body, _ := json.Marshal(map[string]string{"container_id": containerID, "token": containerToken})
-        _, _ = http.Post(slaveURL+"/api/cli/token", "application/json", bytes.NewBuffer(body))
+        resp, err := http.Post(slaveURL+"/api/cli/token", "application/json", bytes.NewBuffer(body))
+        if err != nil {
+            log.Printf("post /api/cli/token failed for %s: %v", containerID, err)
+        } else {
+            defer resp.Body.Close()
+            if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+                b, _ := io.ReadAll(resp.Body)
+                log.Printf("/api/cli/token non-200 for %s: %d %s", containerID, resp.StatusCode, strings.TrimSpace(string(b)))
+            }
+        }
+    }
+    {
         installBody, _ := json.Marshal(map[string]string{"container_id": containerID})
-        _, _ = http.Post(slaveURL+"/api/cli/install", "application/json", bytes.NewBuffer(installBody))
-    }()
+        resp, err := http.Post(slaveURL+"/api/cli/install", "application/json", bytes.NewBuffer(installBody))
+        if err != nil {
+            log.Printf("post /api/cli/install failed for %s: %v", containerID, err)
+        } else {
+            defer resp.Body.Close()
+            if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+                b, _ := io.ReadAll(resp.Body)
+                log.Printf("/api/cli/install non-200 for %s: %d %s", containerID, resp.StatusCode, strings.TrimSpace(string(b)))
+            }
+        }
+    }
 
     res := map[string]interface{}{ "container_id": containerID, "ip_address": ip, "ssh_port": sshPort, "container_token": containerToken }
     rb, _ := json.Marshal(res)
