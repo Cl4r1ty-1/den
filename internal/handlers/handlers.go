@@ -18,6 +18,7 @@ import (
 	"html"
 	
 	"github.com/lib/pq"
+	denemail "github.com/den/internal/email"
 
 	"github.com/den/internal/auth"
 	"github.com/den/internal/database"
@@ -344,7 +345,7 @@ func (h *Handler) AdminExportUserContainer(c *gin.Context) {
     targetUserID, err := strconv.Atoi(idStr)
     if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
 
-    var req struct{ TTLDays int `json:"ttl_days"` }
+    var req struct{ TTLDays int `json:"ttl_days"`; EmailUser bool `json:"email_user"` }
     if err := c.ShouldBindJSON(&req); err != nil || req.TTLDays <= 0 || req.TTLDays > 365 {
         c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ttl_days"}); return
     }
@@ -361,6 +362,9 @@ func (h *Handler) AdminExportUserContainer(c *gin.Context) {
     if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
 
     // enqueue async export job
+    // include requester and target email info for completion emails
+    var targetEmail, targetUsername string
+    _ = h.db.QueryRow(`SELECT email, username FROM users WHERE id=$1`, targetUserID).Scan(&targetEmail, &targetUsername)
     payload := map[string]interface{}{
         "export_id": exportID,
         "user_id": targetUserID,
@@ -368,11 +372,57 @@ func (h *Handler) AdminExportUserContainer(c *gin.Context) {
         "node_hostname": nodeHostname,
         "object_key": objectKey,
         "ttl_days": req.TTLDays,
+        "email_user": req.EmailUser,
+        "requester_email": user.Email,
+        "target_email": targetEmail,
+        "target_username": targetUsername,
     }
     jb, _ := json.Marshal(payload)
     if _, err := h.db.Exec(`INSERT INTO jobs (type, status, payload) VALUES ('export_container','queued',$1)`, string(jb)); err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue job"}); return
     }
+    c.JSON(http.StatusOK, gin.H{"export_id": exportID, "queued": true, "expires_at": expiresAt})
+}
+func (h *Handler) UserExportContainer(c *gin.Context) {
+    user := c.MustGet("user").(*models.User)
+    var req struct{ TTLDays int `json:"ttl_days"` }
+    _ = c.ShouldBindJSON(&req)
+    if req.TTLDays <= 0 || req.TTLDays > 365 { req.TTLDays = 7 }
+
+    var containerID, nodeHostname string
+    err := h.db.QueryRow(`SELECT c.id, n.hostname FROM containers c JOIN nodes n ON c.node_id = n.id WHERE c.user_id = $1`, user.ID).Scan(&containerID, &nodeHostname)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "you have no container"}); return
+    }
+
+    expiresAt := time.Now().Add(time.Duration(req.TTLDays) * 24 * time.Hour)
+    var exportID int
+    objectKey := fmt.Sprintf("exports/%s/%d/%d.tar.zst", containerID, user.ID, time.Now().Unix())
+    err = h.db.QueryRow(`INSERT INTO exports (user_id, container_id, object_key, status, expires_at, requested_by) VALUES ($1,$2,$3,'pending',$4,$5) RETURNING id`, user.ID, containerID, objectKey, expiresAt, user.ID).Scan(&exportID)
+    if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
+
+    payload := map[string]interface{}{
+        "export_id":     exportID,
+        "user_id":       user.ID,
+        "container_id":  containerID,
+        "node_hostname": nodeHostname,
+        "object_key":    objectKey,
+        "ttl_days":      req.TTLDays,
+    }
+    jb, _ := json.Marshal(payload)
+    if _, err := h.db.Exec(`INSERT INTO jobs (type, status, payload) VALUES ('export_container','queued',$1)`, string(jb)); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue job"}); return
+    }
+    go func(u *models.User, contID string, expires time.Time) {
+        if u.Email == "" { return }
+        client, err := denemail.NewFromEnv(); if err != nil { return }
+        html := denemail.RenderNeobrutalismEmail(
+            "Your export has been queued",
+            "We'll email you again when it's ready",
+            fmt.Sprintf("<p>Container <b>%s</b> export has been queued. Link will expire on <b>%s</b>.</p>", contID, expires.Format(time.RFC1123)),
+        )
+        _ = client.Send([]string{u.Email}, "den: export queued", html, "")
+    }(user, containerID, expiresAt)
     c.JSON(http.StatusOK, gin.H{"export_id": exportID, "queued": true, "expires_at": expiresAt})
 }
 
@@ -1166,8 +1216,21 @@ func (h *Handler) AdminApproveUser(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := strconv.Atoi(idStr)
 	if err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"}); return }
+    var email, username string
+    _ = h.db.QueryRow(`SELECT email, username FROM users WHERE id=$1`, userID).Scan(&email, &username)
 	_, err = h.db.Exec(`UPDATE users SET approval_status = 'approved', approved_by = $1, approved_at = NOW(), rejection_reason = NULL, updated_at = NOW() WHERE id = $2`, admin.ID, userID)
 	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve user"}); return }
+    if strings.TrimSpace(email) != "" {
+        go func(to, uname string) {
+            client, err := denemail.NewFromEnv(); if err != nil { return }
+            html := denemail.RenderNeobrutalismEmail(
+                "You're approved!",
+                "Your den environment can now be created",
+                fmt.Sprintf("<p>Hi <b>%s</b>, your account has been approved. You can now create and use your container from the dashboard.</p>", html.EscapeString(uname)),
+            )
+            _ = client.Send([]string{to}, "den: account approved", html, "")
+        }(email, username)
+    }
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -1181,8 +1244,25 @@ func (h *Handler) AdminRejectUser(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil { c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"}); return }
 	var reasonPtr *string
 	if strings.TrimSpace(req.Reason) != "" { r := strings.TrimSpace(req.Reason); reasonPtr = &r }
+    var email, username string
+    _ = h.db.QueryRow(`SELECT email, username FROM users WHERE id=$1`, userID).Scan(&email, &username)
 	_, err = h.db.Exec(`UPDATE users SET approval_status = 'rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2, updated_at = NOW() WHERE id = $3`, admin.ID, reasonPtr, userID)
 	if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject user"}); return }
+    if strings.TrimSpace(email) != "" {
+        go func(to, uname, reason string) {
+            client, err := denemail.NewFromEnv(); if err != nil { return }
+            body := "<p>Hi <b>" + html.EscapeString(uname) + "</b>, unfortunately your account was not approved at this time.</p>"
+            if strings.TrimSpace(reason) != "" {
+                body += "<p><b>Reason:</b> " + html.EscapeString(reason) + "</p>"
+            }
+            htmlMsg := denemail.RenderNeobrutalismEmail(
+                "Account not approved",
+                "You can reply to this email if you believe this is an error",
+                body,
+            )
+            _ = client.Send([]string{to}, "den: account not approved", htmlMsg, "")
+        }(email, username, req.Reason)
+    }
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

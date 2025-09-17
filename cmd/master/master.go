@@ -24,6 +24,7 @@ import (
 	"github.com/den/internal/handlers"
 	"github.com/den/internal/storage"
 	"github.com/den/internal/ssh"
+	email "github.com/den/internal/email"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
@@ -162,6 +163,10 @@ func handleExportJob(db *database.DB, jobID int, payload []byte) error {
         NodeHostname string `json:"node_hostname"`
         ObjectKey   string `json:"object_key"`
         TTLDays     int    `json:"ttl_days"`
+        EmailUser   bool   `json:"email_user"`
+        RequesterEmail string `json:"requester_email"`
+        TargetEmail string `json:"target_email"`
+        TargetUsername string `json:"target_username"`
     }
     if err := json.Unmarshal(payload, &p); err != nil { return err }
 
@@ -184,6 +189,21 @@ func handleExportJob(db *database.DB, jobID int, payload []byte) error {
     getURL, err := r2.PresignedGet(context.Background(), p.ObjectKey, time.Duration(p.TTLDays)*24*time.Hour)
     if err != nil { _, _ = db.Exec(`UPDATE exports SET status='failed', error=$2 WHERE id=$1`, p.ExportID, "presign get failed"); return finalizeJob(db, jobID, false, "presign get failed", nil) }
     _, _ = db.Exec(`UPDATE exports SET status='complete', updated_at=NOW() WHERE id=$1`, p.ExportID)
+    go func() {
+        client, err := email.NewFromEnv(); if err != nil { return }
+        subj := "den: export ready"
+        html := email.RenderNeobrutalismEmail(
+            "Container export is ready",
+            "Download link",
+            fmt.Sprintf("<p>Your export for <b>%s</b> is ready.</p><p><a class=\"btn\" href=\"%s\">Download export</a></p>", p.ContainerID, getURL),
+        )
+        if strings.TrimSpace(p.RequesterEmail) != "" {
+            _ = client.Send([]string{p.RequesterEmail}, subj, html, "")
+        }
+        if p.EmailUser && strings.TrimSpace(p.TargetEmail) != "" {
+            _ = client.Send([]string{p.TargetEmail}, subj, html, "")
+        }
+    }()
     res := map[string]string{"download_url": getURL}
     rb, _ := json.Marshal(res)
     return finalizeJob(db, jobID, true, "", rb)
@@ -422,6 +442,7 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/container/token", h.ContainerToken)
 		userGroup.POST("/container/token/rotate", h.RotateContainerToken)
 		userGroup.POST("/container/create", h.CreateContainer)
+		userGroup.POST("/container/export", h.UserExportContainer)
 		userGroup.POST("/container/ports/new", h.GetNewPort)
 		userGroup.GET("/subdomains", h.SubdomainManagement)
 		userGroup.POST("/subdomains", h.CreateSubdomain)

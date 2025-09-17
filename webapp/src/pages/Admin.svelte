@@ -164,6 +164,26 @@
     toastContainer.addToast("CLI reinstalled", "success");
   }
 
+  async function exportContainer(userId) {
+    const ttl = prompt("Days until link expires?", "7");
+    const ttld = Math.max(1, Math.min(365, parseInt(ttl || "7")));
+    const emailUser = confirm(
+      "Also email the user the download link when ready?"
+    );
+    const res = await fetch(`/admin/users/${userId}/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ttl_days: ttld, email_user: !!emailUser }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      toastContainer.addToast(data.error, "danger");
+      return;
+    }
+    toastContainer.addToast("Export queued", "success");
+    loadJobs();
+  }
+
   async function pollJob(jobId) {
     for (let i = 0; i < 90; i++) {
       try {
@@ -618,6 +638,12 @@
                           on:click={() => reinstallCLI(user.id)}
                         >
                           reinstall cli
+                        </button>
+                        <button
+                          class="bg-chart-4 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+                          on:click={() => exportContainer(user.id)}
+                        >
+                          export container
                         </button>
                       {/if}
                       <button

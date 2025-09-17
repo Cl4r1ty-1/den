@@ -210,6 +210,22 @@
     }
   }
 
+  async function exportMyContainer() {
+    const ttl = prompt("Days until link expires?", "7");
+    const ttld = Math.max(1, Math.min(365, parseInt(ttl || "7")));
+    const res = await fetch(`/user/container/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ttl_days: ttld }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      toastContainer.addToast(data.error, "danger");
+      return;
+    }
+    toastContainer.addToast("Export queued", "success");
+  }
+
   let actionPending = false;
   async function controlContainer(action: "start" | "stop" | "restart") {
     if (!container || actionPending) return;
@@ -415,6 +431,12 @@
                 on:click={() => controlContainer("start")}
               >
                 start
+              </button>
+              <button
+                class="bg-chart-2 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
+                on:click={exportMyContainer}
+              >
+                export container
               </button>
             </div>
           {/if}
