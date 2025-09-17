@@ -391,7 +391,9 @@
               <div
                 class="bg-background border-2 border-border p-4 shadow-shadow"
               >
-                <div class="flex items-center justify-between">
+                <div
+                  class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                >
                   <div class="flex items-center gap-4">
                     <div
                       class="w-12 h-12 bg-chart-3 border-2 border-border flex items-center justify-center"
@@ -424,8 +426,10 @@
                     </div>
                   </div>
 
-                  <div class="flex items-center gap-3">
-                    <div class="text-right text-sm">
+                  <div
+                    class="flex flex-col md:flex-row md:items-center md:gap-3 gap-2 w-full"
+                  >
+                    <div class="md:text-right text-left text-sm md:ml-auto">
                       <div
                         class="px-2 py-1 border-2 border-border text-xs font-heading {node.is_online
                           ? 'bg-chart-4 text-main-foreground'
@@ -590,7 +594,9 @@
                       {/if}
                     </div>
 
-                    <div class="flex gap-2">
+                    <div
+                      class="flex flex-wrap gap-2 justify-end md:justify-start"
+                    >
                       {#if !user.is_admin}
                         {#if user.approval_status === "pending"}
                           <button
