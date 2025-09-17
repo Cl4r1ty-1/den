@@ -429,7 +429,7 @@ func (h *Handler) CLIMe(c *gin.Context) {
     var user models.User
     var email sql.NullString
     var displayName sql.NullString
-    err := h.db.QueryRow(`SELECT id, username, email, display_name, is_admin FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &email, &displayName, &user.IsAdmin)
+    err := h.db.QueryRow(`SELECT id, username, email, display_name, agreed_to_tos, agreed_to_privacy, is_admin FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &email, &displayName, &user.AgreedToTOS, &user.AgreedToPrivacy, &user.IsAdmin)
     if err != nil { c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"}); return }
     user.Email = email.String
     user.DisplayName = displayName.String
