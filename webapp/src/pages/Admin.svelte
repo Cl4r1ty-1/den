@@ -440,7 +440,7 @@
                       </div>
                     </div>
 
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                       <button
                         class="bg-chart-2 text-main-foreground border-2 border-border px-3 py-1 text-sm font-heading hover:translate-x-1 hover:translate-y-1 transition-transform shadow-shadow"
                         on:click={() => generateToken(node.id)}
