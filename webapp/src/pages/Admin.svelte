@@ -531,7 +531,7 @@
               <div
                 class="bg-background border-2 border-border p-4 shadow-shadow"
               >
-                <div class="flex items-center justify-between">
+                <div class="grid gap-4 md:grid-cols-[1fr,auto] items-start">
                   <div class="flex items-center gap-4">
                     <div
                       class="w-12 h-12 bg-chart-2 border-2 border-border flex items-center justify-center"
@@ -564,7 +564,7 @@
                     </div>
                   </div>
 
-                  <div class="flex items-center gap-3">
+                  <div class="flex flex-col gap-2 md:items-end">
                     <div class="text-right text-sm">
                       {#if user.is_admin}
                         <div
@@ -594,9 +594,7 @@
                       {/if}
                     </div>
 
-                    <div
-                      class="flex flex-wrap gap-2 justify-end md:justify-start"
-                    >
+                    <div class="flex flex-wrap gap-2 md:justify-end">
                       {#if !user.is_admin}
                         {#if user.approval_status === "pending"}
                           <button
