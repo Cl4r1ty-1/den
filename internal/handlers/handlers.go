@@ -1933,10 +1933,17 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 	`, user.ID).Scan(&existingSessionID)
 	
 	if err == nil {
+		log.Printf("User %d already has pending verification session: %s", user.ID, existingSessionID)
 		c.JSON(http.StatusOK, gin.H{
 			"session_id": existingSessionID,
 			"message": "Verification session already exists",
 		})
+		return
+	}
+	
+	if err != sql.ErrNoRows {
+		log.Printf("Database error checking existing verification session for user %d: %v", user.ID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 	
@@ -1948,8 +1955,11 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 	}
 	
 	payloadBytes, _ := json.Marshal(payload)
+	log.Printf("Creating verification session for user %d with payload: %s", user.ID, string(payloadBytes))
+	
 	req, err := http.NewRequest("POST", "https://verification.didit.me/v2/session/", bytes.NewBuffer(payloadBytes))
 	if err != nil {
+		log.Printf("Failed to create HTTP request for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
 		return
 	}
@@ -1961,6 +1971,7 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("Failed to send request to Didit API for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create verification session"})
 		return
 	}
@@ -1968,23 +1979,29 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 	
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("Failed to read Didit API response for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
 		return
 	}
 	
-	if resp.StatusCode != http.StatusOK {
+	log.Printf("Didit API response for user %d: status=%d, body=%s", user.ID, resp.StatusCode, string(body))
+	
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("Didit API error for user %d: status=%d, body=%s", user.ID, resp.StatusCode, string(body))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Didit API error", "details": string(body)})
 		return
 	}
 	
 	var diditResponse map[string]interface{}
 	if err := json.Unmarshal(body, &diditResponse); err != nil {
+		log.Printf("Failed to parse Didit API response JSON for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response"})
 		return
 	}
 	
 	sessionID, ok := diditResponse["session_id"].(string)
 	if !ok {
+		log.Printf("Invalid session ID in Didit API response for user %d: %+v", user.ID, diditResponse)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid session ID in response"})
 		return
 	}
@@ -2004,12 +2021,14 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 	)
 	
 	if err != nil {
+		log.Printf("Failed to store verification session in database for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store verification session"})
 		return
 	}
 	
+	log.Printf("Successfully created verification session for user %d: %s", user.ID, sessionID)
+	
 	c.JSON(http.StatusOK, gin.H{
-		"session_id": sessionID,
 		"verification_url": diditResponse["url"],
 		"status": diditResponse["status"],
 	})
@@ -2034,12 +2053,16 @@ func (h *Handler) GetVerificationStatus(c *gin.Context) {
 	
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("No verification session found for user %d", user.ID)
 			c.JSON(http.StatusOK, gin.H{"status": "none"})
 			return
 		}
+		log.Printf("Database error getting verification status for user %d: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
+	
+	log.Printf("Retrieved verification status for user %d: status=%s", user.ID, session.Status)
 	
 	c.JSON(http.StatusOK, gin.H{
 		"status": session.Status,
@@ -2054,7 +2077,10 @@ func (h *Handler) VerificationWebhook(c *gin.Context) {
 	signature := c.GetHeader("X-Signature")
 	timestamp := c.GetHeader("X-Timestamp")
 	
+	log.Printf("Received verification webhook: signature=%s, timestamp=%s", signature, timestamp)
+	
 	if signature == "" || timestamp == "" {
+		log.Printf("Webhook missing signature or timestamp")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing signature or timestamp"})
 		return
 	}
@@ -2089,15 +2115,21 @@ func (h *Handler) VerificationWebhook(c *gin.Context) {
 	expectedSignature := hex.EncodeToString(mac.Sum(nil))
 	
 	if !hmac.Equal([]byte(expectedSignature), []byte(signature)) {
+		log.Printf("Webhook signature verification failed: expected=%s, received=%s", expectedSignature, signature)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
 		return
 	}
 	
+	log.Printf("Webhook signature verified successfully")
+	
 	var webhookData map[string]interface{}
 	if err := json.Unmarshal(body, &webhookData); err != nil {
+		log.Printf("Failed to parse webhook JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
+	
+	log.Printf("Webhook data parsed successfully: %+v", webhookData)
 	
 	sessionID, ok := webhookData["session_id"].(string)
 	if !ok {
