@@ -2,6 +2,9 @@ package models
 
 import (
 	"time"
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 )
 
 type User struct {
@@ -119,4 +122,41 @@ type Job struct {
     MaxAttempts int         `json:"max_attempts" db:"max_attempts"`
     CreatedAt   time.Time   `json:"created_at" db:"created_at"`
     UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
+}
+
+type JSONB map[string]interface{}
+
+func (j JSONB) Value() (driver.Value, error) {
+	if j == nil {
+		return nil, nil
+	}
+	return json.Marshal(j)
+}
+func (j *JSONB) Scan(value interface{}) error {
+	if value == nil {
+		*j = nil
+		return nil
+	}
+	
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	
+	return json.Unmarshal(bytes, j)
+}
+
+type VerificationSession struct {
+    ID            int       `json:"id" db:"id"`
+    UserID        int       `json:"user_id" db:"user_id"`
+    SessionID     string    `json:"session_id" db:"session_id"`
+    SessionNumber *int      `json:"session_number" db:"session_number"`
+    SessionToken  *string   `json:"session_token" db:"session_token"`
+    VendorData    *string   `json:"vendor_data" db:"vendor_data"`
+    WorkflowID    string    `json:"workflow_id" db:"workflow_id"`
+    VerificationURL *string `json:"verification_url" db:"verification_url"`
+    Status        string    `json:"status" db:"status"`
+    Decision      JSONB     `json:"decision" db:"decision"`
+    CreatedAt     time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }

@@ -16,6 +16,8 @@ import (
 	"log"
 	"os"
 	"html"
+	"crypto/hmac"
+	"crypto/sha256"
 	
 	"github.com/lib/pq"
 	denemail "github.com/den/internal/email"
@@ -1897,4 +1899,326 @@ func (h *Handler) NotFound(c *gin.Context) {
 		"user": user,
 		"path": c.Request.URL.Path,
 	})
+}
+
+func abs(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func (h *Handler) RawBodyMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body"})
+			c.Abort()
+			return
+		}
+		c.Set("rawBody", body)
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+		
+		c.Next()
+	}
+}
+
+func (h *Handler) CreateVerificationSession(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	var existingSessionID string
+	err := h.db.QueryRow(`
+		SELECT session_id FROM verification_sessions 
+		WHERE user_id = $1 AND status IN ('not_started', 'in_progress')
+		ORDER BY created_at DESC LIMIT 1
+	`, user.ID).Scan(&existingSessionID)
+	
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"session_id": existingSessionID,
+			"message": "Verification session already exists",
+		})
+		return
+	}
+	
+	payload := map[string]interface{}{
+		"workflow_id": os.Getenv("DIDIT_WORKFLOW_ID"),
+		"vendor_data": fmt.Sprintf("user-%d", user.ID),
+		"metadata": fmt.Sprintf(`{"account_id":"%d"}`, user.ID),
+	}
+	
+	payloadBytes, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", "https://verification.didit.me/v2/session/", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+	
+	req.Header.Set("accept", "application/json")
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-api-key", os.Getenv("DIDIT_API_KEY"))
+	
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create verification session"})
+		return
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response"})
+		return
+	}
+	
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Didit API error", "details": string(body)})
+		return
+	}
+	
+	var diditResponse map[string]interface{}
+	if err := json.Unmarshal(body, &diditResponse); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response"})
+		return
+	}
+	
+	sessionID, ok := diditResponse["session_id"].(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid session ID in response"})
+		return
+	}
+	_, err = h.db.Exec(`
+		INSERT INTO verification_sessions 
+		(user_id, session_id, session_number, session_token, vendor_data, workflow_id, verification_url, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, 
+		user.ID,
+		sessionID,
+		diditResponse["session_number"],
+		diditResponse["session_token"],
+		diditResponse["vendor_data"],
+		diditResponse["workflow_id"],
+		diditResponse["url"],
+		diditResponse["status"],
+	)
+	
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store verification session"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"verification_url": diditResponse["url"],
+		"status": diditResponse["status"],
+	})
+}
+
+func (h *Handler) GetVerificationStatus(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	
+	var session models.VerificationSession
+	err := h.db.QueryRow(`
+		SELECT id, user_id, session_id, session_number, session_token, vendor_data, 
+		       workflow_id, verification_url, status, decision, created_at, updated_at
+		FROM verification_sessions 
+		WHERE user_id = $1 
+		ORDER BY created_at DESC LIMIT 1
+	`, user.ID).Scan(
+		&session.ID, &session.UserID, &session.SessionID, &session.SessionNumber,
+		&session.SessionToken, &session.VendorData, &session.WorkflowID,
+		&session.VerificationURL, &session.Status,
+		&session.Decision, &session.CreatedAt, &session.UpdatedAt,
+	)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusOK, gin.H{"status": "none"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status": session.Status,
+		"verification_url": session.VerificationURL,
+		"decision": session.Decision,
+		"created_at": session.CreatedAt,
+		"updated_at": session.UpdatedAt,
+	})
+}
+
+func (h *Handler) VerificationWebhook(c *gin.Context) {
+	signature := c.GetHeader("X-Signature")
+	timestamp := c.GetHeader("X-Timestamp")
+	
+	if signature == "" || timestamp == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing signature or timestamp"})
+		return
+	}
+	rawBody, exists := c.Get("rawBody")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Raw body not available"})
+		return
+	}
+	
+	body := rawBody.([]byte)
+	
+	currentTime := time.Now().Unix()
+	incomingTime, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid timestamp"})
+		return
+	}
+	
+	if abs(currentTime-incomingTime) > 300 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Request timestamp is stale"})
+		return
+	}
+	
+	webhookSecret := os.Getenv("DIDIT_WEBHOOK_SECRET")
+	if webhookSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Webhook secret not configured"})
+		return
+	}
+	
+	mac := hmac.New(sha256.New, []byte(webhookSecret))
+	mac.Write(body)
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+	
+	if !hmac.Equal([]byte(expectedSignature), []byte(signature)) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
+		return
+	}
+	
+	var webhookData map[string]interface{}
+	if err := json.Unmarshal(body, &webhookData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+	
+	sessionID, ok := webhookData["session_id"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing session_id"})
+		return
+	}
+	vendorData, ok := webhookData["vendor_data"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing vendor_data"})
+		return
+	}
+	userIDStr := strings.TrimPrefix(vendorData, "user-")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID in vendor_data"})
+		return
+	}
+	status, ok := webhookData["status"].(string)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing status"})
+		return
+	}
+	if status != "Approved" {
+		c.JSON(http.StatusOK, gin.H{"message": "Status not approved, ignoring"})
+		return
+	}
+	
+	decision, ok := webhookData["decision"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing decision data"})
+		return
+	}
+	
+	warnings := []string{}
+	if idVerification, ok := decision["id_verification"].(map[string]interface{}); ok {
+		if warningList, ok := idVerification["warnings"].([]interface{}); ok {
+			for _, warning := range warningList {
+				if warningMap, ok := warning.(map[string]interface{}); ok {
+					if risk, ok := warningMap["risk"].(string); ok {
+						if risk == "DOB_MISMATCH_WITH_PROVIDED" || 
+						   risk == "POSSIBLE_DUPLICATED_USER" || 
+						   risk == "INVALID_DATE" || 
+						   risk == "DATE_OF_BIRTH_NOT_DETECTED" {
+							warnings = append(warnings, risk)
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	if len(warnings) > 0 {
+		decisionJSON, _ := json.Marshal(decision)
+		_, err = h.db.Exec(`
+			UPDATE verification_sessions 
+			SET status = $1, decision = $2, updated_at = CURRENT_TIMESTAMP
+			WHERE session_id = $3
+		`, status, decisionJSON, sessionID)
+		
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update session"})
+			return
+		}
+		
+		c.JSON(http.StatusOK, gin.H{"message": "Verification completed with warnings, requires manual review"})
+		return
+	}
+	
+	age := 0
+	if idVerification, ok := decision["id_verification"].(map[string]interface{}); ok {
+		if ageFloat, ok := idVerification["age"].(float64); ok {
+			age = int(ageFloat)
+		}
+	}
+	
+	if age < 13 || age > 18 {
+		decisionJSON, _ := json.Marshal(decision)
+		_, err = h.db.Exec(`
+			UPDATE verification_sessions 
+			SET status = $1, decision = $2, updated_at = CURRENT_TIMESTAMP
+			WHERE session_id = $3
+		`, status, decisionJSON, sessionID)
+		
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update session"})
+			return
+		}
+		
+		c.JSON(http.StatusOK, gin.H{"message": "Age verification failed, requires manual review"})
+		return
+	}
+	
+	_, err = h.db.Exec(`
+		UPDATE users 
+		SET approval_status = 'approved', approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, userID)
+	
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve user"})
+		return
+	}
+	
+	decisionJSON, _ := json.Marshal(decision)
+	_, err = h.db.Exec(`
+		UPDATE verification_sessions 
+		SET status = $1, decision = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE session_id = $3
+	`, status, decisionJSON, sessionID)
+	
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update session"})
+		return
+	}
+	
+	emailService, err := denemail.NewFromEnv()
+	if err == nil {
+		var userEmail string
+		h.db.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&userEmail)
+		
+		emailService.Send([]string{userEmail}, "Account Approved - Den", "Your account has been automatically approved after successful ID verification!", "")
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "User automatically approved"})
 }

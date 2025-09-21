@@ -415,9 +415,13 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 	r.Static("/static", "./web/static")
 	r.Static("/assets", "./webapp/dist/assets")
 	r.StaticFile("/vite.svg", "./webapp/dist/vite.svg")
-    r.Static("/downloads/cli", "./cli/dist")
-
+	r.Static("/downloads/cli", "./cli/dist")
     h := handlers.New(authService, db)
+	webhookGroup := r.Group("/webhook")
+	webhookGroup.Use(h.RawBodyMiddleware())
+	{
+		webhookGroup.POST("/verification", h.VerificationWebhook)
+	}
 
 	r.GET("/", h.Home)
 	r.GET("/login", h.LoginPage)
@@ -451,6 +455,8 @@ func setupRouter(authService *auth.Service, db *database.DB) *gin.Engine {
 		userGroup.GET("/ssh-setup", h.SSHSetup)
 		userGroup.POST("/ssh-setup", h.ConfigureSSH)
 		userGroup.POST("/aup/validate", h.AUPValidate)
+		userGroup.POST("/verification/create", h.CreateVerificationSession)
+		userGroup.GET("/verification/status", h.GetVerificationStatus)
 	}
 
 	adminGroup := r.Group("/admin")
