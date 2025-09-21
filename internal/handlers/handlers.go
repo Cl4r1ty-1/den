@@ -1944,6 +1944,7 @@ func (h *Handler) CreateVerificationSession(c *gin.Context) {
 		"workflow_id": os.Getenv("DIDIT_WORKFLOW_ID"),
 		"vendor_data": fmt.Sprintf("user-%d", user.ID),
 		"metadata": fmt.Sprintf(`{"account_id":"%d"}`, user.ID),
+		"callback_url": "https://hack.kim/user/dashboard",
 	}
 	
 	payloadBytes, _ := json.Marshal(payload)
